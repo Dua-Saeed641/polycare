@@ -1,74 +1,201 @@
-# Polymath
+<p align="center">
+  <img src="assets/banner.png" alt="PolyCare" width="100%" />
+</p>
 
-**A team of experts in your pocket. No signal required.**
+<h3 align="center">A health expert in every ASHA worker's pocket. No signal required.</h3>
 
-Polymath is an offline-first AI copilot for field technicians, built on **Qdrant Edge** and **Qdrant Server**.
-One small LLM runs entirely on an Android phone. For each question, Qdrant Edge retrieves the model's **expertise**: fine-tuned LoRA *skills*, the team's *memory*, and *draft tokens* that speed up generation. When a connection appears, Qdrant Server's geometry decides what to sync, detects conflicts, raises alerts on emerging issues, and **trains new skills** that flow back to the phones.
+<p align="center">
+  Offline-first AI copilot for India's community health workers, built on <b>Qdrant Edge</b> and <b>Qdrant Cloud</b>.
+</p>
 
-> Geek Room × Qdrant Hackathon · Problem Statement 03: *AI-Powered Edge Memory & Intelligence Platform*
+<p align="center">
+  <img alt="Android" src="https://img.shields.io/badge/Android-10%2B-5E0B53?style=flat-square&logo=android&logoColor=white" />
+  <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-2.1-5E0B53?style=flat-square&logo=kotlin&logoColor=white" />
+  <img alt="Jetpack Compose" src="https://img.shields.io/badge/Jetpack%20Compose-Material%203-BC16A6?style=flat-square&logo=jetpackcompose&logoColor=white" />
+  <img alt="Qdrant Edge" src="https://img.shields.io/badge/Qdrant-Edge%20%2B%20Cloud-FB2E66?style=flat-square" />
+  <img alt="llama.cpp" src="https://img.shields.io/badge/llama.cpp-on--device-F285C6?style=flat-square" />
+  <img alt="Status" src="https://img.shields.io/badge/status-M0%20foundations-3A0633?style=flat-square" />
+</p>
 
-![System architecture](docs/diagrams/system-architecture.png)
+<p align="center">
+  <a href="#why-polycare">Why</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#tech-stack">Tech stack</a> ·
+  <a href="#getting-started">Getting started</a> ·
+  <a href="#roadmap">Roadmap</a> ·
+  <a href="#documentation">Docs</a>
+</p>
 
-## Why it's different
+---
 
-| Most edge-AI demos | Polymath |
+## Why PolyCare
+
+India's **~1 million ASHA workers** each look after about 1,000 people. They track every pregnancy, newborn and child, give first-line advice and decide who must go to a health centre *today*. They do it from memory and paper registers, often where the phone shows no signal.
+
+| The problem | What PolyCare does |
 |---|---|
-| Qdrant stores documents for RAG | Qdrant also stores **which fine-tuned version of the model should answer**, and blends two skills using the similarity scores |
-| Generation speed is fixed by hardware | **Speculative decoding from memory**: the phone gets faster as the team uses it |
-| Sync = "upload everything newer than X" | **Merkle tree over semantic regions**: sync reports *which topics* diverged and only transfers those |
-| Everything syncs, or a hard-coded rule decides | **Sync Gate**: hubness × novelty decides what is team knowledge, what is personal, and what is a +1 vote |
-| Conflicts resolved by last-write-wins | Contradictions detected by vector proximity + NLI, kept visible, merged reversibly |
-| Cloud is a backup | Cloud spots **emerging issues across the fleet** and **creates new skills** when knowledge accumulates |
+| No connectivity at the doorstep | Everything runs **on the phone**: the LLM, speech, OCR and vector search |
+| Hundreds of protocols to remember | A small LLM becomes a specialist per question through **LoRA skills** routed by Qdrant Edge |
+| Missed danger signs cost lives | **Danger-sign triage** with a rule table and cited protocol sources |
+| Paperwork eats the day | **On-device OCR** fills records from MCP cards, lab reports and prescriptions |
+| Outbreaks are noticed weeks late | **Outbreak Radar** in Qdrant Cloud spots symptom clusters across villages |
+| Health data is sensitive | Personal records **never leave the phone**; only de-identified signals sync |
 
-## How the model runs on the phone
+> Built for the Geek Room × Qdrant Hackathon, Problem Statement 03: *AI-Powered Edge Memory & Intelligence Platform*.
 
-![On-device runtime](docs/diagrams/on-device-runtime.png)
+## Features
 
-- **Base:** Qwen2.5-1.5B-Instruct, Q4_K_M GGUF (~1 GB, memory-mapped), llama.cpp via JNI.
-- **Skills:** LoRA r=16 adapters (~9 MB), routed by Qdrant Edge and hot-swapped per request.
-- **Memory:** Qdrant Edge hybrid search (bge-small dense + BM25 sparse, RRF).
-- **Voice:** whisper.cpp tiny.en, on device.
-- **Always answers:** a degradation ladder steps down from full blending to retrieval-only under heat, low battery or memory pressure.
+**At the doorstep**
+- **Ask** by voice or text in Hindi or English, fully offline, with sources and a confidence badge
+- **Danger-sign triage**: refer now, refer within 24 h, or care at home
+- **Medicine helper** and **counselling cards** for families
+
+**Less paperwork**
+- **Scan** MCP cards, lab reports, prescriptions and medicine strips with on-device OCR
+- **Household memory** searchable by meaning, plus a **due list** and **visit planner**
+- **Monthly report** and incentive tracker filled from recorded visits
+
+**Team and district intelligence**
+- **Sync with Qdrant Cloud** whenever a connection appears, resumable and conflict-aware
+- **Gap answering**: questions asked offline are answered by the cloud on the next sync
+- **Outbreak Radar** and a **supervisor dashboard**
+- **Conflict Inbox** when two workers record different details
+
+**Built to be trusted**
+- Always answers: steps down gracefully on low battery, heat or low memory
+- Up to **~1 million knowledge passages** searchable on the phone
+- Memory Inspector and Activity log show what the phone knows and what synced
+
+## How it works
+
+### Asking a question, fully offline
+
+```mermaid
+flowchart LR
+    Q["Question<br/>voice · text · scan"] --> E["Embed<br/>dense + sparse"]
+    E --> R{"Skill router<br/>Qdrant Edge"}
+    R -->|best match| S1["Maternal care<br/>LoRA"]
+    R -->|blend| S2["Newborn care<br/>LoRA"]
+    E --> K[("Knowledge<br/>~1 M passages")]
+    E --> H[("Household<br/>memory")]
+    S1 --> L["On-device LLM<br/>llama.cpp"]
+    S2 --> L
+    K --> L
+    H --> L
+    L --> A["Answer<br/>sources · confidence · referral"]
+    A --> O[("Op-log")]
+
+    classDef phone fill:#FBEEF6,stroke:#5E0B53,color:#0E0A0D
+    classDef store fill:#F9DCF1,stroke:#BC16A6,color:#0E0A0D
+    classDef out fill:#5E0B53,stroke:#3A0633,color:#FFFFFF
+    class Q,E,R,S1,S2,L phone
+    class K,H,O store
+    class A out
+```
+
+### Syncing when a connection appears
+
+```mermaid
+flowchart LR
+    subgraph Phone["On the phone"]
+        O[("Op-log")] --> G{"Sync Gate"}
+        G -->|personal data| P["Stays on the phone"]
+        G -->|redundant| V["+1 vote only"]
+        G -->|new team knowledge<br/>de-identified signals| U["Upload"]
+    end
+
+    subgraph Cloud["Qdrant Cloud"]
+        F[("Fleet knowledge")]
+        RD["Outbreak Radar"]
+        GA["Gap answers"]
+        KS["Knowledge slice<br/>+ new skills"]
+    end
+
+    U --> F
+    F --> RD
+    F --> GA
+    RD -->|alert + guidance| D["Phones and<br/>supervisor dashboard"]
+    GA --> D
+    KS -->|partial snapshot| D
+
+    classDef phone fill:#FBEEF6,stroke:#5E0B53,color:#0E0A0D
+    classDef cloud fill:#F9DCF1,stroke:#BC16A6,color:#0E0A0D
+    classDef keep fill:#FFFFFF,stroke:#FB2E66,color:#0E0A0D
+    class O,G,V,U phone
+    class F,RD,GA,KS cloud
+    class P keep
+```
 
 ## Tech stack
 
 | Layer | Technologies |
 |---|---|
-| Android | Kotlin 2, Jetpack Compose, Hilt, Room (SQLite), WorkManager, OkHttp, Wire/Protobuf, zstd, Nearby Connections, Android Keystore |
-| On-device AI | llama.cpp, whisper.cpp, ONNX Runtime Mobile, Qwen2.5-1.5B, bge-small-en-v1.5 |
-| Vector search | **Qdrant Edge** (Kotlin SDK / UniFFI), **Qdrant Server** |
-| Cloud | FastAPI, PostgreSQL 16, MinIO, Redis + ARQ, Ollama/vLLM (Qwen2.5-7B), Caddy, Docker Compose |
-| Skill Factory | Unsloth / PEFT, llama.cpp GGUF conversion, HDBSCAN |
-| Dashboard / Ops | Next.js 15, shadcn/ui, Recharts, Prometheus, Grafana, OpenTelemetry, Toxiproxy |
+| **App** | Kotlin 2, Jetpack Compose, Material 3, Hilt, Coroutines/Flow, Room, WorkManager |
+| **On-device AI** | llama.cpp (Qwen2.5-1.5B + LoRA skills), whisper.cpp, ONNX Runtime (multilingual-e5-small), Google ML Kit OCR |
+| **Vector search** | Qdrant Edge (on the phone), Qdrant Cloud (sync, radar, knowledge slices) |
+| **Sync & security** | Protobuf, OkHttp, hybrid logical clocks, Android Keystore, Tink (ed25519), SQLCipher |
+| **Cloud** | FastAPI, PostgreSQL, S3/MinIO, Redis + ARQ, Qwen2.5-7B, Next.js dashboard |
 
-## Repository
+## Getting started
 
-```
-android/        Android app + core modules (llm, embed, memory, oplog, sync, governor)
-cloud/          gateway · workers · skill-factory · dashboard · docker-compose.yml
-proto/          sync.proto (wire format)
-tools/          seed data, chaos scripts, benchmarks
-docs/diagrams/  architecture diagrams (Python → SVG/PNG, run render.sh)
-```
-
-## Getting started *(work in progress)*
+**Requirements:** JDK 17 · Android SDK (platform 35) · an arm64 Android phone (Android 10+, 4 GB+ RAM recommended) with USB debugging enabled.
 
 ```bash
-# Cloud (Qdrant Server, Postgres, MinIO, Redis, gateway, workers, dashboard)
-cd cloud && docker compose up -d
+git clone <repo-url> polycare
+cd polycare/android
 
-# Android (arm64 device, Android 10+, 6 GB+ RAM recommended)
-cd android && ./gradlew :app:installDebug
+./gradlew test                 # unit tests
+./gradlew :app:installDebug    # build and install on the connected phone
 ```
 
-Model files are downloaded on first run and verified by sha256.
+On Windows use `gradlew.bat`. Model files are downloaded on first run and verified by sha256 before loading.
 
-## Documents
+## Project structure
 
-- [PROJECT_DESCRIPTION.md](PROJECT_DESCRIPTION.md): who it's for, the problem, business model, demo script, milestones
-- [ARCHITECTURE.md](ARCHITECTURE.md): components, data model, algorithms, flows, failure matrix
-- [CLAUDE.md](CLAUDE.md): engineering invariants and conventions
+```
+android/        Kotlin app and core modules
+  app/            Compose UI, navigation, brand theme
+  core-common/    hybrid logical clock, UUIDv7, config
+  core-vector/    vector store interface, hybrid search fusion
+  core-governor/  battery, heat and memory → operating mode
+cloud/          gateway · workers · skill factory · dashboard      (planned)
+native/         Qdrant Edge Android build (Rust + UniFFI)          (planned)
+proto/          sync.proto wire format                             (planned)
+assets/         banner, logo, Tenor Sans
+```
 
-## Status
+## Roadmap
 
-Design complete · Day-1 technical checks next (see `CLAUDE.md`).
+| Milestone | Scope | Status |
+|---|---|---|
+| **M0** | Foundations and feasibility checks | 🟣 In progress |
+| **M1** | On-device knowledge and hybrid search | ⚪ Planned |
+| **M2** | Offline health assistant and triage | ⚪ Planned |
+| **M3** | Households, OCR and daily work | ⚪ Planned |
+| **M4–M5** | Evolving memory and conflicts | ⚪ Planned |
+| **M6** | Sync with Qdrant Cloud | ⚪ Planned |
+| **M7** | Outbreak Radar, gap answering, knowledge slicing | ⚪ Planned |
+| **M8–M10** | A million points on the phone, reliability, complete product | ⚪ Planned |
+
+Full checklist in [MILESTONES.md](MILESTONES.md).
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [PROJECT_DESCRIPTION.md](PROJECT_DESCRIPTION.md) | Users, problem, features, business model, demo script |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Components, data model, algorithms, flows, failure handling |
+| [MILESTONES.md](MILESTONES.md) | What we build, in order, and the problem-statement checklist |
+| [CLAUDE.md](CLAUDE.md) | Engineering invariants and conventions |
+
+## Responsible use
+
+PolyCare is **decision support, not a diagnosis tool**. Referral decisions come from official protocol rules; the AI explains them and always cites its source. Personal health records stay on the worker's phone.
+
+---
+
+<p align="center">
+  <img src="assets/logo.png" alt="" width="36" /><br/>
+  <sub>PolyCare · Geek Room × Qdrant Hackathon 2026</sub>
+</p>
