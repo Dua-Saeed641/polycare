@@ -1,0 +1,67 @@
+{
+  "note": "Official, publicly available Government of India (National Health Mission / MoHFW) material. PolyCare cites every passage back to its document and page. Hindi modules are typeset in legacy Kruti Dev/Chanakya fonts and are converted to Unicode by tools/knowledge/krutidev.py.",
+  "sources": [
+    {
+      "id": "asha-module-6",
+      "title": "ASHA Module 6 — Skills that Save Lives: Maternal and Newborn Health",
+      "publisher": "National Health Mission, MoHFW",
+      "url": "https://nhm.gov.in/images/pdf/communitisation/asha/book-no-6.pdf",
+      "file": "book-no-6.pdf",
+      "lang": "en",
+      "programme": "maternal-newborn",
+      "kind": "prose"
+    },
+    {
+      "id": "asha-module-7",
+      "title": "ASHA Module 7 — Skills that Save Lives: Child Health and Nutrition",
+      "publisher": "National Health Mission, MoHFW",
+      "url": "https://nhm.gov.in/images/pdf/communitisation/asha/book-no-7.pdf",
+      "file": "book-no-7.pdf",
+      "lang": "en",
+      "programme": "child-health",
+      "kind": "prose"
+    },
+    {
+      "id": "asha-induction",
+      "title": "Induction Training Module for ASHAs",
+      "publisher": "National Health Mission, MoHFW",
+      "url": "https://nhm.gov.in/images/pdf/communitisation/asha/ASHA_Induction_Module_English.pdf",
+      "file": "ASHA_Induction_Module_English.pdf",
+      "lang": "en",
+      "programme": "general",
+      "kind": "prose"
+    },
+    {
+      "id": "nis",
+      "title": "National Immunization Schedule (NIS) for Infants, Children and Pregnant Women",
+      "publisher": "National Health Mission, MoHFW",
+      "url": "https://nhm.gov.in/New_Updates_2018/NHM_Components/Immunization/report/National_%20Immunization_Schedule.pdf",
+      "file": "National_Immunization_Schedule.pdf",
+      "lang": "en",
+      "programme": "immunisation",
+      "kind": "table"
+    },
+    {
+      "id": "asha-module-6-hi",
+      "title": "आशा मॉड्यूल 6 — दक्षताएँ जो जीवन रक्षा कर सकें: मातृ एवं नवजात शिशु स्वास्थ्य",
+      "publisher": "National Health Mission, MoHFW",
+      "url": "https://nhm.gov.in/images/pdf/communitisation/asha/Asha_Module_book_6%20Hindi.pdf",
+      "file": "Asha_Module_book_6_Hindi.pdf",
+      "lang": "hi",
+      "programme": "maternal-newborn",
+      "kind": "prose",
+      "encoding": "krutidev"
+    },
+    {
+      "id": "asha-module-7-hi",
+      "title": "आशा मॉड्यूल 7 — दक्षताएँ जो जीवन रक्षा कर सकें: बाल स्वास्थ्य एवं पोषण",
+      "publisher": "National Health Mission, MoHFW",
+      "url": "https://nhm.gov.in/images/pdf/communitisation/asha/Asha_Module_book_7%20Hindi.pdf",
+      "file": "Asha_Module_book_7_Hindi.pdf",
+      "lang": "hi",
+      "programme": "child-health",
+      "kind": "prose",
+      "encoding": "krutidev"
+    }
+  ]
+}

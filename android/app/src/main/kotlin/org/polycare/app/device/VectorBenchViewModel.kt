@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.polycare.common.EventLog
 import org.polycare.vector.VectorBenchmark
 import org.polycare.vector.edge.EdgeStoreOptions
 import org.polycare.vector.edge.QdrantEdgeVectorStore
@@ -29,6 +30,7 @@ sealed interface BenchState {
 @HiltViewModel
 class VectorBenchViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val events: EventLog,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<BenchState>(BenchState.Idle)
@@ -49,10 +51,21 @@ class VectorBenchViewModel @Inject constructor(
                             "optimize=${result.optimizeMs}ms p50=${"%.2f".format(result.p50Ms)}ms " +
                             "p95=${"%.2f".format(result.p95Ms)}ms recall@${result.k}=${"%.2f".format(result.recallAtK)} " +
                             "disk=${result.diskBytes}")
+                        events.record(
+                            EventLog.Category.BENCHMARK,
+                            "Vector benchmark",
+                            mapOf(
+                                "points" to result.points, "quantization" to options.quantization.name,
+                                "p50Ms" to "%.2f".format(result.p50Ms), "p95Ms" to "%.2f".format(result.p95Ms),
+                                "recallAt10" to "%.2f".format(result.recallAtK), "loadMs" to result.loadMs,
+                                "indexMs" to result.optimizeMs, "diskMb" to (result.diskBytes ?: 0) / (1024 * 1024),
+                            ),
+                        )
                         BenchState.Done(result, options.quantization.label)
                     }
                 } catch (e: Throwable) {
                     Log.e(TAG, "benchmark failed", e)
+                    events.record(EventLog.Category.BENCHMARK, "Vector benchmark failed", mapOf("points" to points, "error" to e.javaClass.simpleName), EventLog.Level.ERROR)
                     BenchState.Failed(e.message ?: e.javaClass.simpleName)
                 } finally {
                     logDiskBreakdown(dir)

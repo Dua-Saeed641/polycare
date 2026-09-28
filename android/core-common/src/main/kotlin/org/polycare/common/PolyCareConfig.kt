@@ -18,6 +18,11 @@ object PolyCareConfig {
         const val resultLimit = 5
         /** Standard RRF constant. */
         const val rrfK = 60
+        /** BM25 term-frequency saturation and length normalisation for sparse vectors. */
+        const val bm25K1 = 1.2f
+        const val bm25B = 0.75f
+        const val bm25AvgDocTokens = 120f
+
         /** Staleness half-life for the confidence badge. */
         const val stalenessHalfLifeMs = 14L * 24 * 60 * 60 * 1000
     }

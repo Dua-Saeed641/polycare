@@ -18,6 +18,7 @@ import tech.qdrant.edge.ffi.Condition
 import tech.qdrant.edge.ffi.Distance
 import tech.qdrant.edge.ffi.EdgeConfig
 import tech.qdrant.edge.ffi.EdgeShard
+import tech.qdrant.edge.ffi.FacetRequest
 import tech.qdrant.edge.ffi.FieldCondition
 import tech.qdrant.edge.ffi.Fusion
 import tech.qdrant.edge.ffi.HnswIndexConfig
@@ -34,6 +35,7 @@ import tech.qdrant.edge.ffi.QueryRequest
 import tech.qdrant.edge.ffi.ScalarQuantizationParams
 import tech.qdrant.edge.ffi.ScalarType
 import tech.qdrant.edge.ffi.ScoringQuery
+import tech.qdrant.edge.ffi.ScrollRequest
 import tech.qdrant.edge.ffi.SearchParams
 import tech.qdrant.edge.ffi.SparseVectorDataConfig
 import tech.qdrant.edge.ffi.UpdateOperation
@@ -55,6 +57,9 @@ enum class EdgeQuantization(val label: String) {
     INT8("int8"),
     BINARY_2BIT("2-bit binary"),
 }
+
+/** One page from [QdrantEdgeVectorStore.scroll]; pass [nextOffset] back in to continue, null = done. */
+data class ScrollPage(val points: List<ScoredPoint>, val nextOffset: String?)
 
 data class EdgeStoreOptions(
     val quantization: EdgeQuantization = EdgeQuantization.INT8,
@@ -150,6 +155,33 @@ class QdrantEdgeVectorStore private constructor(
 
     override suspend fun count(): Long = io { shard.info().pointsCount.toLong() }
 
+    /** Distinct values of a keyword payload field and how many points hold each (for browsing UIs). */
+    suspend fun facets(key: String, filter: Filter? = null, limit: Int = 50): List<Pair<String, Long>> = io {
+        shard.facet(FacetRequest(key = key, limit = limit.toULong(), exact = true, filter = filter?.toEdge()))
+            .hits.map { it.value to it.count.toLong() }
+    }
+
+    /** Pages through points (no vectors) for browsing UIs. [offset] is the id [scroll] last returned, or null to start. */
+    suspend fun scroll(filter: Filter? = null, limit: Int = 20, offset: String? = null): ScrollPage = io {
+        val response = shard.scroll(
+            ScrollRequest(
+                offset = offset?.let { pointId(it) },
+                limit = limit.toULong(),
+                filter = filter?.toEdge(),
+                withPayload = WithPayload.Bool(true),
+            ),
+        )
+        ScrollPage(
+            points = response.records.map { r ->
+                val json = r.payload?.let(::JSONObject) ?: JSONObject()
+                val map = buildMap { json.keys().forEach { k -> if (k != ID_KEY) put(k, json.optString(k)) } }
+                val originalId = json.optString(ID_KEY).ifEmpty { idToString(r.id) }
+                ScoredPoint(originalId, 0f, map)
+            },
+            nextOffset = response.nextOffset?.let(::idToString),
+        )
+    }
+
     override suspend fun optimize() = io {
         shard.flush()
         shard.optimize()
@@ -208,13 +240,13 @@ class QdrantEdgeVectorStore private constructor(
     private fun EdgeScoredPoint.toPolyCare(): ScoredPoint {
         val json = payload?.let(::JSONObject) ?: JSONObject()
         val map = buildMap { json.keys().forEach { k -> if (k != ID_KEY) put(k, json.optString(k)) } }
-        val originalId = json.optString(ID_KEY).ifEmpty {
-            when (val pid = id) {
-                is PointId.Uuid -> pid.value
-                is PointId.NumId -> pid.value.toString()
-            }
-        }
+        val originalId = json.optString(ID_KEY).ifEmpty { idToString(id) }
         return ScoredPoint(originalId, score, map)
+    }
+
+    private fun idToString(id: PointId): String = when (id) {
+        is PointId.Uuid -> id.value
+        is PointId.NumId -> id.value.toString()
     }
 
     companion object {

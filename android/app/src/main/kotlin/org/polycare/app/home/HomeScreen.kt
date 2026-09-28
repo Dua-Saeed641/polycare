@@ -39,7 +39,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.polycare.app.ai.EmbedderProvider
 import org.polycare.app.device.DeviceCheckViewModel
+import org.polycare.app.knowledge.KnowledgeRepository
 import org.polycare.app.ui.components.GlassCard
 import org.polycare.app.ui.components.Hairline
 import org.polycare.app.ui.components.MetricRow
@@ -51,7 +53,7 @@ import org.polycare.app.ui.theme.Brand
 private data class Feature(val title: String, val caption: String, val icon: ImageVector, val milestone: String)
 
 private val Features = listOf(
-    Feature("Ask", "Voice or text, offline", Icons.Outlined.Mic, "M2"),
+    Feature("Ask", "Voice answers, offline", Icons.Outlined.Mic, "M2"),
     Feature("Triage", "Danger signs & referral", Icons.Outlined.MonitorHeart, "M2"),
     Feature("Scan", "MCP cards & reports", Icons.Outlined.DocumentScanner, "M3"),
     Feature("Households", "Families & visits", Icons.Outlined.Groups, "M3"),
@@ -62,10 +64,14 @@ private val Features = listOf(
 @Composable
 fun HomeScreen(
     contentPadding: PaddingValues,
+    onAsk: () -> Unit,
     onNotReady: (feature: String, milestone: String) -> Unit,
     viewModel: DeviceCheckViewModel = hiltViewModel(),
+    status: HomeStatusViewModel = hiltViewModel(),
 ) {
     val device by viewModel.state.collectAsStateWithLifecycle()
+    val knowledge by status.knowledge.collectAsStateWithLifecycle()
+    val embedder by status.embedder.collectAsStateWithLifecycle()
 
     Column(
         Modifier
@@ -93,7 +99,7 @@ fun HomeScreen(
         )
 
         Spacer(Modifier.height(28.dp))
-        AskBar(onClick = { onNotReady("Ask", "M2") })
+        AskBar(onClick = onAsk)
 
         Spacer(Modifier.height(36.dp))
         SectionLabel("Tools")
@@ -113,7 +119,24 @@ fun HomeScreen(
         GlassCard(Modifier.fillMaxWidth(), padding = 20.dp) {
             MetricRow("Mode", device?.rung?.label ?: "Checking…", valueColor = Brand.Plum)
             Hairline()
-            MetricRow("Knowledge passages", "Not installed")
+            MetricRow(
+                "Knowledge passages",
+                when (val k = knowledge) {
+                    is KnowledgeRepository.State.Ready -> "%,d · %d sources".format(k.points, k.manifest.sources.size)
+                    KnowledgeRepository.State.Loading -> "Opening…"
+                    else -> "Not installed"
+                },
+            )
+            Hairline()
+            MetricRow(
+                "Language model",
+                when (embedder) {
+                    is EmbedderProvider.State.Ready -> "Ready · e5-small"
+                    EmbedderProvider.State.Loading -> "Loading…"
+                    is EmbedderProvider.State.Unavailable -> "Not installed"
+                    EmbedderProvider.State.NotLoaded -> "Idle"
+                },
+            )
             Hairline()
             MetricRow("Skills", "Not installed")
             Hairline()

@@ -13,6 +13,8 @@ coroutines = "1.9.0"
 junitJupiter = "5.11.4"
 junit4 = "4.13.2"
 jna = "5.17.0"
+onnxruntime = "1.30.0"
+orgJson = "20240303"
 androidxTestRunner = "1.6.2"
 androidxTestExtJunit = "1.2.1"
 
@@ -39,6 +41,9 @@ junit-jupiter = { group = "org.junit.jupiter", name = "junit-jupiter", version.r
 junit-platform-launcher = { group = "org.junit.platform", name = "junit-platform-launcher" }
 junit4 = { group = "junit", name = "junit", version.ref = "junit4" }
 jna = { group = "net.java.dev.jna", name = "jna", version.ref = "jna" }
+onnxruntime = { group = "com.microsoft.onnxruntime", name = "onnxruntime", version.ref = "onnxruntime" }
+org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
+onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExtJunit" }
 

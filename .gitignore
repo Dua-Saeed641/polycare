@@ -17,6 +17,9 @@ native/**/target/
 *.gguf
 *.onnx
 *.bin
+tools/models/**/tokenizer.json
+*.part
+*.quarantine
 
 # Python
 __pycache__/

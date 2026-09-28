@@ -41,6 +41,7 @@ Every change must keep these true. If a change needs to break one, stop and ask.
 - **Config:** thresholds (τ, δ, T, half-life, stable window, chunk size) live in one config object per side. No magic numbers inline.
 - **Tests:** every sync or op-log change needs a test that kills the process mid-operation and asserts no loss or duplication.
 - **Numbers:** performance figures are *targets* until measured. Label them honestly.
+- **Embeddings:** one text per ONNX run (the int8 model's dynamic quantisation makes batch members affect each other). The Python tools pin the same `onnxruntime` version as the app (`tools/requirements.txt` ↔ `libs.versions.toml`) so cloud-built vectors match the phone's. Always use `embedQuery` / `embedPassages` (e5 prefixes).
 - **Docs:** no generated diagram images. Mermaid diagrams in Markdown are fine (the README uses them).
 - **Brand / UI:** the app follows `assets/banner.png`: paper background `#F8F8F8` with soft orchid/pink/red orbs and film grain, deep plum clover (`assets/logo.png`), Tenor Sans (`assets/fonts/`, bundled as `R.font.tenor_sans`) for headings and tracked uppercase labels, system sans for body text. Light theme only. Colours live in `app/.../ui/theme/Color.kt` (`Brand.*`); reuse `BrandBackground`, `GlassCard`, `SectionLabel`, `StatusPill`, `MetricRow` instead of ad-hoc styling. Features that are not built yet must say so (e.g. "arrives in M2"), never fake results.
 
@@ -60,6 +61,13 @@ bash native/build-qdrant-edge.sh
 # on-phone vector benchmark (debug build), results in logcat tag PolyCareBench
 adb shell am start -n org.polycare.app/.MainActivity --ei bench_points 10000
 
+# embedding model (multilingual-e5-small int8): download + verify, build tokenizer/fixtures, push to phone
+python -m venv tools/.venv && tools/.venv/Scripts/pip install -r tools/requirements.txt
+PYTHON=tools/.venv/Scripts/python bash tools/models/fetch_models.sh
+bash tools/models/push_models.sh
+# on-phone parity check vs Python reference (debug build), results in logcat tag PolyCareEmbed
+adb shell am start -n org.polycare.app/.MainActivity --ez embed_check true
+
 # cloud
 cd cloud && docker compose up -d
 cd cloud/gateway && pytest -q
@@ -72,6 +80,8 @@ cd cloud/gateway && pytest -q
 | Qdrant Edge built for arm64 (cargo-ndk + UniFFI): upsert + search on a real phone | ☑ |
 | Hybrid query (prefetch + RRF) on Edge | ☑ |
 | Qdrant Edge: 100k measured (p50 9.8 ms, recall 97%); 1 M points with compact storage still to measure | ☐ |
+| Multilingual embedder (e5-small int8, ONNX Runtime): Kotlin tokenizer = HF token-for-token; JVM vectors = Python (cos > 0.9999) | ☑ |
+| Embedder on the phone (ARM): tokens exact, same nearest neighbour 25/25, min cos 0.9983, query p50 9.6 ms | ☑ |
 | llama.cpp base + 2 LoRA adapters, per-request switch | ☐ |
 | Hindi quality of the base model; Hindi speech-to-text | ☐ |
 | ML Kit OCR on an MCP card | ☐ |

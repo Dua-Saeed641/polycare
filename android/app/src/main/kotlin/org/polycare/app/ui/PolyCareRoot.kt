@@ -44,6 +44,7 @@ import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
 import org.polycare.app.device.DeviceCheckScreen
 import org.polycare.app.home.HomeScreen
+import org.polycare.app.knowledge.SearchScreen
 import org.polycare.app.ui.components.BrandBackground
 import org.polycare.app.ui.theme.Brand
 
@@ -52,8 +53,10 @@ private enum class Tab(val route: String, val label: String, val icon: ImageVect
     System("system", "System", Icons.Outlined.Tune),
 }
 
+private const val SEARCH_ROUTE = "search"
+
 @Composable
-fun PolyCareRoot(autoBenchPoints: Int? = null) {
+fun PolyCareRoot(autoBenchPoints: Int? = null, debugSearch: String? = null) {
     val nav = rememberNavController()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -79,10 +82,16 @@ fun PolyCareRoot(autoBenchPoints: Int? = null) {
             },
         ) { padding ->
             val content = PaddingValues(bottom = padding.calculateBottomPadding())
-            NavHost(nav, startDestination = if (autoBenchPoints != null) Tab.System.route else Tab.Home.route) {
+            val start = when {
+                autoBenchPoints != null -> Tab.System.route
+                debugSearch != null -> SEARCH_ROUTE
+                else -> Tab.Home.route
+            }
+            NavHost(nav, startDestination = start) {
                 composable(Tab.Home.route) {
                     HomeScreen(
                         contentPadding = content,
+                        onAsk = { nav.navigate(SEARCH_ROUTE) },
                         onNotReady = { feature, milestone ->
                             scope.launch {
                                 snackbar.currentSnackbarData?.dismiss()
@@ -92,6 +101,7 @@ fun PolyCareRoot(autoBenchPoints: Int? = null) {
                     )
                 }
                 composable(Tab.System.route) { DeviceCheckScreen(contentPadding = content, autoBenchPoints = autoBenchPoints) }
+                composable(SEARCH_ROUTE) { SearchScreen(contentPadding = content, onBack = { nav.popBackStack() }, initialQuery = debugSearch) }
             }
         }
     }

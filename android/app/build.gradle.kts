@@ -19,7 +19,13 @@ android {
 
         // llama.cpp, whisper.cpp and Qdrant Edge are built for arm64 only.
         ndk { abiFilters += "arm64-v8a" }
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+
+    // On-device parity checks reuse the Python reference fixture from core-embed: in the
+    // instrumented test, and in debug builds for the `embed_check` launch extra.
+    sourceSets["androidTest"].assets.srcDir("../core-embed/src/test/resources")
+    sourceSets["debug"].assets.srcDir("../core-embed/src/test/resources")
 
     buildTypes {
         release {
@@ -44,6 +50,8 @@ dependencies {
     implementation(project(":core-vector"))
     implementation(project(":core-governor"))
     implementation(project(":qdrant-edge"))
+    implementation(project(":core-embed"))
+    implementation(libs.onnxruntime.android)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -64,4 +72,8 @@ dependencies {
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit4)
+
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
 }

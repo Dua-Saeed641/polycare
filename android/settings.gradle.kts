@@ -17,5 +17,6 @@ rootProject.name = "PolyCare"
 include(":app")
 include(":core-common")
 include(":core-vector")
+include(":core-embed")
 include(":core-governor")
 include(":qdrant-edge")

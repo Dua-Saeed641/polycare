@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.polycare.app.log.ActivityCard
 import org.polycare.app.ui.components.GlassCard
 import org.polycare.app.ui.components.Hairline
 import org.polycare.app.ui.components.MetricRow
@@ -119,6 +120,11 @@ fun DeviceCheckScreen(
             Hairline()
             MetricRow("Temperature", s.thermal.name.lowercase().replaceFirstChar { it.uppercase() })
         }
+
+        Spacer(Modifier.height(24.dp))
+        SectionLabel("Activity")
+        Spacer(Modifier.height(12.dp))
+        ActivityCard()
         Spacer(Modifier.height(32.dp))
     }
 }

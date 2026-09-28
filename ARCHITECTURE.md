@@ -334,6 +334,15 @@ Where the 100k disk goes: float32 originals 147 MB, int8 copies 37 MB, HNSW grap
 - Deliver the slice as a Qdrant snapshot, not as upserts, so there is no WAL.
 - Store originals as `uint8` or `float16` (or keep int8/binary copies only) instead of float32. At 1 M points: float32 originals would be ~1.5 GB, float16 ~0.75 GB, uint8 ~0.38 GB.
 
+Embedder (multilingual-e5-small int8, 118 MB, ONNX Runtime 1.30, same phone):
+
+| Measure | Result |
+|---|---|
+| Tokens vs HF `tokenizers` (25 sentences, 8 Indian scripts + English) | identical |
+| Vectors vs Python reference (x86) | min cosine 0.9983; every sentence keeps the same nearest neighbour (25/25) |
+| Query embedding | p50 9.6 ms, p95 11.0 ms |
+| Load (sha256 verify + open) | ~3 s, once per app start |
+
 ---
 
 ## 10. Tech stack

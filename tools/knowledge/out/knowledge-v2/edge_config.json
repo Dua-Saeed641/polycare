@@ -1,0 +1,1 @@
+{"vectors":{"dense":{"size":384,"distance":"Cosine","quantization_config":{"scalar":{"type":"int8","quantile":0.99,"always_ram":true}},"hnsw_config":{"m":8,"ef_construct":100,"full_scan_threshold":10000,"max_indexing_threads":0}}},"sparse_vectors":{"sparse":{"modifier":"idf"}}}
