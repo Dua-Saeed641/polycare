@@ -145,9 +145,12 @@ flowchart LR
 git clone <repo-url> polycare
 cd polycare/android
 
-./gradlew test                 # unit tests
-./gradlew :app:installDebug    # build and install on the connected phone
+bash ../native/build-qdrant-edge.sh   # first time: builds Qdrant Edge for Android (~15 min)
+./gradlew test                        # unit tests
+./gradlew :app:installDebug           # build and install on the connected phone
 ```
+
+Building Qdrant Edge needs Rust (stable ≥ 1.98, target `aarch64-linux-android`), `cargo-ndk` and the Android NDK. On Windows also install MinGW-w64: `winget install BrechtSanders.WinLibs.POSIX.UCRT`.
 
 On Windows use `gradlew.bat`. Model files are downloaded on first run and verified by sha256 before loading.
 
@@ -159,8 +162,9 @@ android/        Kotlin app and core modules
   core-common/    hybrid logical clock, UUIDv7, config
   core-vector/    vector store interface, hybrid search fusion
   core-governor/  battery, heat and memory → operating mode
+  qdrant-edge/    Qdrant Edge bindings (UniFFI) + VectorStore adapter
+native/         build-qdrant-edge.sh: Qdrant Edge for Android arm64
 cloud/          gateway · workers · skill factory · dashboard      (planned)
-native/         Qdrant Edge Android build (Rust + UniFFI)          (planned)
 proto/          sync.proto wire format                             (planned)
 assets/         banner, logo, Tenor Sans
 ```

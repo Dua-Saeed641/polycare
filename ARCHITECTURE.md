@@ -38,7 +38,7 @@
 | Inference engine | llama.cpp (NDK/CMake, JNI), arm64 NEON / i8mm | Base model + LoRA hot-swap + lookup speculative decoding |
 | Base model | `Qwen2.5-1.5B-Instruct` Q4_K_M GGUF (~1.0 GB, mmap); `Qwen2.5-0.5B` for low-RAM phones | Frozen generalist |
 | Skills | LoRA r=16 on q/k/v/o, GGUF (~9 MB each) | Health-domain experts, blended at runtime |
-| Vector store | **Qdrant Edge** (`qdrant-edge` Rust crate via UniFFI; official Kotlin SDK when released) | Shards: `knowledge`, `households`, `memory`, `skills`, `drafts`, `gaps`, `signals`, `atlas` |
+| Vector store | **Qdrant Edge** (upstream `qdrant-edge-ffi` crate built for arm64 with cargo-ndk; UniFFI Kotlin bindings in `:qdrant-edge`) | Shards: `knowledge`, `households`, `memory`, `skills`, `drafts`, `gaps`, `signals`, `atlas` |
 | Op-log / outbox | SQLite via Room (WAL mode) | Source of truth, HLC, hash chain, sync cursors |
 | Crypto | Android Keystore + ed25519 (Tink), SHA-256 | Device identity, op signatures, artifact verification |
 | Artifact Store | App-private files, content-addressed | Models, adapters, knowledge snapshots: verify, LRU eviction, resumable download |
@@ -162,7 +162,7 @@ The cloud holds the full knowledge base; each phone carries the slice most relev
 - **Latency target:** < 20 ms p95 for a 1 M-point hybrid search on a mid-range phone (to be measured).
 - **Reasoning:** the LLM never reads a million points. Retrieval narrows it to the best 5–10 passages, and the model reasons over those.
 - **Only knowledge scales to millions.** Personal records on a phone are limited to the ASHA's own ~1,000 people. Other people's health records are never placed on her phone.
-- **Open check:** which quantization modes the Qdrant Edge crate supports.
+- **Supported by Qdrant Edge:** scalar int8, product, binary 1 / 1.5 / 2-bit and Turbo quantization, with on-disk (cold) or in-RAM (pinned) storage per component. Real numbers come from the in-app benchmark.
 
 ---
 
@@ -321,6 +321,19 @@ The **Chaos Panel** (debug build) triggers #2, #3, #5, #16, #17 and #18 live. To
 | Knowledge slice on disk (1 M points) | < 650 MB |
 | Peak app RAM | < 2.2 GB (full), < 1.2 GB (low-RAM mode) |
 
+### Measured on a real phone
+
+Qdrant Edge on a 6 GB-class Android 16 phone (model 2406ERN9CI, arm64), 384-d clustered synthetic vectors, int8 scalar quantization, HNSW m=8, `hnsw_ef`=128. Measured 2026-09-28 with the in-app Vector engine benchmark.
+
+| Points | Search p50 | Search p95 | Recall@10 | Load | Index build | Disk used |
+|---|---|---|---|---|---|---|
+| 10,000 | 6.9 ms | 12.8 ms | 99% | 4.6 s | 2.2 s | 58 MB |
+| 100,000 | 9.8 ms | 37.8 ms | 97% | 30.8 s | 14.4 s | 574 MB |
+
+Where the 100k disk goes: float32 originals 147 MB, int8 copies 37 MB, HNSW graph ~3 MB, and ~300 MB of write-ahead log from inserting through upserts. For the ~1 M-point knowledge slice this means:
+- Deliver the slice as a Qdrant snapshot, not as upserts, so there is no WAL.
+- Store originals as `uint8` or `float16` (or keep int8/binary copies only) instead of float32. At 1 M points: float32 originals would be ~1.5 GB, float16 ~0.75 GB, uint8 ~0.38 GB.
+
 ---
 
 ## 10. Tech stack
@@ -360,8 +373,8 @@ polycare/
 
 | Risk | Check | Fallback |
 |---|---|---|
-| Qdrant Edge has no released Android SDK yet (Kotlin SDK in review upstream) | Build `qdrant-edge` with cargo-ndk + UniFFI; create shard, upsert, search on a real phone | Use the upstream Kotlin SDK as soon as it lands |
-| Quantization support in Qdrant Edge | Load 1 M quantized points; measure size and latency | Smaller slice (250–500k) or Matryoshka-truncated vectors |
+| Qdrant Edge has no released Android SDK yet | Upstream ships the `qdrant-edge-ffi` UniFFI crate; we build it with cargo-ndk (`native/build-qdrant-edge.sh`, pinned commit) and run instrumented tests on a real phone | Switch to the official Kotlin SDK artifact once it is published |
+| Size and latency of 1 M quantized points | Qdrant Edge FFI supports scalar int8, product, binary (1, 1.5, 2-bit) and Turbo quantization plus cold/cached/pinned memory; measure with the in-app Vector engine benchmark | Smaller slice (250–500k) or Matryoshka-truncated vectors |
 | Hybrid query on Edge | Test prefetch + RRF | RRF in Kotlin |
 | Hindi quality of a 1.5B model | Eval set of 100 ASHA questions in Hindi | Gemma-class 1–2B multilingual model; answer in English with Hindi summary |
 | Hindi speech-to-text offline | whisper base/small vs IndicConformer on real recordings | Text input + large on-screen checklist |

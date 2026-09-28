@@ -35,7 +35,7 @@ Every change must keep these true. If a change needs to break one, stop and ask.
 
 ## Conventions
 - **Kotlin:** coroutines + Flow, Hilt DI, no blocking calls on Main. Native (JNI/UniFFI) calls run on dedicated dispatchers. Module boundaries follow `core-*`.
-- **Native:** llama.cpp and whisper.cpp are git submodules built with CMake via the NDK (arm64-v8a only). Qdrant Edge is built from Rust with cargo-ndk + UniFFI. JNI surfaces stay thin; logic lives in Kotlin.
+- **Native:** llama.cpp and whisper.cpp are git submodules built with CMake via the NDK (arm64-v8a only). Qdrant Edge is built from the upstream `qdrant-edge-ffi` crate by `native/build-qdrant-edge.sh`; the generated Kotlin in `android/qdrant-edge/src/main/kotlin/tech/qdrant/edge/ffi` is never hand-edited, and the `.so` is not committed. JNI surfaces stay thin; logic lives in Kotlin.
 - **Python:** 3.12, FastAPI + Pydantic v2, async everywhere, `ruff` + `mypy --strict` on `cloud/`.
 - **Wire format:** change `proto/sync.proto` first, then regenerate. Never hand-edit generated code.
 - **Config:** thresholds (τ, δ, T, half-life, stable window, chunk size) live in one config object per side. No magic numbers inline.
@@ -50,7 +50,15 @@ Every change must keep these true. If a change needs to break one, stop and ask.
 cd android && ./gradlew :app:assembleDebug
 cd android && ./gradlew :app:installDebug
 cd android && ./gradlew test
+cd android && ./gradlew :qdrant-edge:connectedAndroidTest   # Qdrant Edge on the phone
 adb devices
+
+# Qdrant Edge native build (pinned upstream commit; ~15 min first time)
+# Windows needs MinGW-w64: winget install BrechtSanders.WinLibs.POSIX.UCRT
+bash native/build-qdrant-edge.sh
+
+# on-phone vector benchmark (debug build), results in logcat tag PolyCareBench
+adb shell am start -n org.polycare.app/.MainActivity --ei bench_points 10000
 
 # cloud
 cd cloud && docker compose up -d
@@ -60,10 +68,10 @@ cd cloud/gateway && pytest -q
 ## First checks (status)
 | Check | Status |
 |---|---|
-| Android project builds and installs on the phone | ☐ |
-| Qdrant Edge built for arm64 (cargo-ndk + UniFFI): upsert + search on a real phone | ☐ |
-| Hybrid query (prefetch + RRF) on Edge | ☐ |
-| Qdrant Edge quantization: 1 M points size + latency | ☐ |
+| Android project builds and installs on the phone | ☑ |
+| Qdrant Edge built for arm64 (cargo-ndk + UniFFI): upsert + search on a real phone | ☑ |
+| Hybrid query (prefetch + RRF) on Edge | ☑ |
+| Qdrant Edge: 100k measured (p50 9.8 ms, recall 97%); 1 M points with compact storage still to measure | ☐ |
 | llama.cpp base + 2 LoRA adapters, per-request switch | ☐ |
 | Hindi quality of the base model; Hindi speech-to-text | ☐ |
 | ML Kit OCR on an MCP card | ☐ |

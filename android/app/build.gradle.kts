@@ -43,6 +43,7 @@ dependencies {
     implementation(project(":core-common"))
     implementation(project(":core-vector"))
     implementation(project(":core-governor"))
+    implementation(project(":qdrant-edge"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

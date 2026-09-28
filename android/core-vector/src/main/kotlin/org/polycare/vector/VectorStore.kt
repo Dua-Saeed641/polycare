@@ -17,6 +17,19 @@ interface VectorStore {
     suspend fun searchSparse(query: SparseQuery, filter: Filter? = null): List<ScoredPoint>
 
     suspend fun count(): Long
+
+    /**
+     * Dense + sparse search fused with RRF. Stores with native fusion (Qdrant Edge prefetch)
+     * override this; the default runs both searches and fuses in Kotlin.
+     */
+    suspend fun hybrid(dense: DenseQuery, sparse: SparseQuery, limit: Int, filter: Filter? = null): List<ScoredPoint> =
+        Rrf.fuse(listOf(search(dense, filter), searchSparse(sparse, filter)), limit)
+
+    /** Build or refresh the search index after bulk loads. No-op where not applicable. */
+    suspend fun optimize() {}
+
+    /** Bytes used on disk, when the store is disk-backed. */
+    fun diskBytes(): Long? = null
 }
 
 data class SparseVector(val indices: IntArray, val values: FloatArray) {

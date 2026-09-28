@@ -1,6 +1,7 @@
 package org.polycare.app.device
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,9 +21,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -34,8 +37,15 @@ import org.polycare.app.ui.theme.Brand
 import org.polycare.governor.Rung
 
 @Composable
-fun DeviceCheckScreen(contentPadding: PaddingValues, viewModel: DeviceCheckViewModel = hiltViewModel()) {
+fun DeviceCheckScreen(
+    contentPadding: PaddingValues,
+    autoBenchPoints: Int? = null,
+    viewModel: DeviceCheckViewModel = hiltViewModel(),
+    benchViewModel: VectorBenchViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val bench by benchViewModel.state.collectAsStateWithLifecycle()
+    LaunchedEffect(autoBenchPoints) { autoBenchPoints?.let { benchViewModel.run(it) } }
     val current = state
 
     if (current == null) {
@@ -97,6 +107,11 @@ fun DeviceCheckScreen(contentPadding: PaddingValues, viewModel: DeviceCheckViewM
         }
 
         Spacer(Modifier.height(24.dp))
+        SectionLabel("Vector engine")
+        Spacer(Modifier.height(12.dp))
+        VectorEngineCard(bench, onRun = benchViewModel::run)
+
+        Spacer(Modifier.height(24.dp))
         SectionLabel("Right now")
         Spacer(Modifier.height(12.dp))
         GlassCard(Modifier.fillMaxWidth(), padding = 20.dp) {
@@ -132,3 +147,64 @@ private fun RungLadder(active: Rung) {
 }
 
 private fun Long.gb(): String = if (this >= 1024) "%.1f GB".format(this / 1024f) else "$this MB"
+
+@Composable
+private fun VectorEngineCard(state: BenchState, onRun: (Int) -> Unit) {
+    GlassCard(Modifier.fillMaxWidth()) {
+        Text("Qdrant Edge", style = MaterialTheme.typography.titleLarge, color = Brand.Ink)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Loads random 384-d vectors into a real on-device shard (int8 quantized, HNSW m=8), then measures search.",
+            style = MaterialTheme.typography.bodySmall,
+            color = Brand.InkMuted,
+        )
+        Spacer(Modifier.height(16.dp))
+        when (state) {
+            BenchState.Idle -> Unit
+            is BenchState.Running -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(16.dp), color = Brand.Plum, strokeWidth = 2.dp)
+                    Spacer(Modifier.size(10.dp))
+                    Text(state.step, style = MaterialTheme.typography.bodyMedium, color = Brand.Ink)
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+            is BenchState.Done -> {
+                val r = state.result
+                MetricRow("Points", "%,d".format(r.points))
+                Hairline()
+                MetricRow("Search p50 / p95", "%.2f / %.2f ms".format(r.p50Ms, r.p95Ms), valueColor = Brand.Plum)
+                Hairline()
+                MetricRow("Recall@${r.k}", "%.0f%%".format(r.recallAtK * 100))
+                Hairline()
+                MetricRow("Load · index build", "${r.loadMs / 1000.0}s · ${r.optimizeMs / 1000.0}s")
+                Hairline()
+                MetricRow("On disk", r.diskBytes?.let { (it / (1024 * 1024)).toString() + " MB" } ?: "–")
+                Spacer(Modifier.height(16.dp))
+            }
+            is BenchState.Failed -> {
+                Text(state.message, style = MaterialTheme.typography.bodySmall, color = Brand.Red)
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+        val enabled = state !is BenchState.Running
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            listOf(10_000, 100_000).forEach { n ->
+                BenchButton(if (n >= 1000) "${n / 1000}K POINTS" else "$n", enabled) { onRun(n) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BenchButton(label: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(CircleShape)
+            .background(if (enabled) Brand.Plum else Brand.Line)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = Brand.Paper)
+    }
+}

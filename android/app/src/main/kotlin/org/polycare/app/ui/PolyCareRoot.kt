@@ -53,7 +53,7 @@ private enum class Tab(val route: String, val label: String, val icon: ImageVect
 }
 
 @Composable
-fun PolyCareRoot() {
+fun PolyCareRoot(autoBenchPoints: Int? = null) {
     val nav = rememberNavController()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -79,7 +79,7 @@ fun PolyCareRoot() {
             },
         ) { padding ->
             val content = PaddingValues(bottom = padding.calculateBottomPadding())
-            NavHost(nav, startDestination = Tab.Home.route) {
+            NavHost(nav, startDestination = if (autoBenchPoints != null) Tab.System.route else Tab.Home.route) {
                 composable(Tab.Home.route) {
                     HomeScreen(
                         contentPadding = content,
@@ -91,7 +91,7 @@ fun PolyCareRoot() {
                         },
                     )
                 }
-                composable(Tab.System.route) { DeviceCheckScreen(contentPadding = content) }
+                composable(Tab.System.route) { DeviceCheckScreen(contentPadding = content, autoBenchPoints = autoBenchPoints) }
             }
         }
     }

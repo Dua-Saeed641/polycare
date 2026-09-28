@@ -25,3 +25,7 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Qdrant Edge build
+native/qdrant/
+android/qdrant-edge/src/main/jniLibs/
