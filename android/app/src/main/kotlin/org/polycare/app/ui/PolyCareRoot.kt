@@ -42,9 +42,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
+import org.polycare.app.ask.AskScreen
 import org.polycare.app.device.DeviceCheckScreen
 import org.polycare.app.home.HomeScreen
 import org.polycare.app.knowledge.SearchScreen
+import org.polycare.app.triage.TriageScreen
 import org.polycare.app.ui.components.BrandBackground
 import org.polycare.app.ui.theme.Brand
 
@@ -54,9 +56,11 @@ private enum class Tab(val route: String, val label: String, val icon: ImageVect
 }
 
 private const val SEARCH_ROUTE = "search"
+private const val ASK_ROUTE = "ask"
+private const val TRIAGE_ROUTE = "triage"
 
 @Composable
-fun PolyCareRoot(autoBenchPoints: Int? = null, debugSearch: String? = null) {
+fun PolyCareRoot(autoBenchPoints: Int? = null, debugSearch: String? = null, debugAsk: String? = null, debugTriage: Boolean = false) {
     val nav = rememberNavController()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -85,13 +89,16 @@ fun PolyCareRoot(autoBenchPoints: Int? = null, debugSearch: String? = null) {
             val start = when {
                 autoBenchPoints != null -> Tab.System.route
                 debugSearch != null -> SEARCH_ROUTE
+                debugAsk != null -> ASK_ROUTE
+                debugTriage -> TRIAGE_ROUTE
                 else -> Tab.Home.route
             }
             NavHost(nav, startDestination = start) {
                 composable(Tab.Home.route) {
                     HomeScreen(
                         contentPadding = content,
-                        onAsk = { nav.navigate(SEARCH_ROUTE) },
+                        onAsk = { nav.navigate(ASK_ROUTE) },
+                        onNavigate = { route -> nav.navigate(route) },
                         onNotReady = { feature, milestone ->
                             scope.launch {
                                 snackbar.currentSnackbarData?.dismiss()
@@ -102,6 +109,8 @@ fun PolyCareRoot(autoBenchPoints: Int? = null, debugSearch: String? = null) {
                 }
                 composable(Tab.System.route) { DeviceCheckScreen(contentPadding = content, autoBenchPoints = autoBenchPoints) }
                 composable(SEARCH_ROUTE) { SearchScreen(contentPadding = content, onBack = { nav.popBackStack() }, initialQuery = debugSearch) }
+                composable(ASK_ROUTE) { AskScreen(contentPadding = content, onBack = { nav.popBackStack() }, initialQuery = debugAsk) }
+                composable(TRIAGE_ROUTE) { TriageScreen(contentPadding = content, onBack = { nav.popBackStack() }) }
             }
         }
     }

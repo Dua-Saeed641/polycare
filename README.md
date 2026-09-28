@@ -14,7 +14,7 @@
   <img alt="Jetpack Compose" src="https://img.shields.io/badge/Jetpack%20Compose-Material%203-BC16A6?style=flat-square&logo=jetpackcompose&logoColor=white" />
   <img alt="Qdrant Edge" src="https://img.shields.io/badge/Qdrant-Edge%20%2B%20Cloud-FB2E66?style=flat-square" />
   <img alt="llama.cpp" src="https://img.shields.io/badge/llama.cpp-on--device-F285C6?style=flat-square" />
-  <img alt="Status" src="https://img.shields.io/badge/status-M0%20foundations-3A0633?style=flat-square" />
+  <img alt="Status" src="https://img.shields.io/badge/status-M2%20offline%20assistant-3A0633?style=flat-square" />
 </p>
 
 <p align="center">
@@ -173,9 +173,9 @@ assets/         banner, logo, Tenor Sans
 
 | Milestone | Scope | Status |
 |---|---|---|
-| **M0** | Foundations and feasibility checks | 🟣 In progress |
-| **M1** | On-device knowledge and hybrid search | ⚪ Planned |
-| **M2** | Offline health assistant and triage | ⚪ Planned |
+| **M0** | Foundations and feasibility checks | 🟣 In progress (5/10) |
+| **M1** | On-device knowledge and hybrid search | 🟣 In progress (4/5) |
+| **M2** | Offline health assistant and triage | 🟣 In progress (2/8, +3 partial) |
 | **M3** | Households, OCR and daily work | ⚪ Planned |
 | **M4–M5** | Evolving memory and conflicts | ⚪ Planned |
 | **M6** | Sync with Qdrant Cloud | ⚪ Planned |

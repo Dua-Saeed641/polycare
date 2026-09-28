@@ -29,7 +29,12 @@ class MainActivity : ComponentActivity() {
         if (isDebuggable() && intent.getBooleanExtra(EXTRA_EMBED_CHECK, false)) runEmbedCheck()
         setContent {
             PolyCareTheme {
-                PolyCareRoot(autoBenchPoints = debugBenchRequest(), debugSearch = debugSearchRequest())
+                PolyCareRoot(
+                    autoBenchPoints = debugBenchRequest(),
+                    debugSearch = debugSearchRequest(),
+                    debugAsk = debugAskRequest(),
+                    debugTriage = debugTriageRequest(),
+                )
             }
         }
     }
@@ -41,6 +46,14 @@ class MainActivity : ComponentActivity() {
     /** Debug builds only: `--es search_query "how to prepare ORS"` opens Search with that query. */
     private fun debugSearchRequest(): String? =
         intent.getStringExtra(EXTRA_SEARCH_QUERY)?.takeIf { isDebuggable() && it.isNotBlank() }
+
+    /** Debug builds only: `--es ask_query "baby has fast breathing"` opens Ask with that question. */
+    private fun debugAskRequest(): String? =
+        intent.getStringExtra(EXTRA_ASK_QUERY)?.takeIf { isDebuggable() && it.isNotBlank() }
+
+    /** Debug builds only: `--ez open_triage true` opens Triage — for verifying it renders without a tap. */
+    private fun debugTriageRequest(): Boolean =
+        intent.getBooleanExtra(EXTRA_OPEN_TRIAGE, false) && isDebuggable()
 
     private fun debugBenchRequest(): Int? =
         intent.getIntExtra(EXTRA_BENCH_POINTS, 0).takeIf { isDebuggable() && it > 0 }
@@ -85,6 +98,8 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_BENCH_POINTS = "bench_points"
         const val EXTRA_EMBED_CHECK = "embed_check"
         const val EXTRA_SEARCH_QUERY = "search_query"
+        const val EXTRA_ASK_QUERY = "ask_query"
+        const val EXTRA_OPEN_TRIAGE = "open_triage"
         const val EMBED_TAG = "PolyCareEmbed"
     }
 }
