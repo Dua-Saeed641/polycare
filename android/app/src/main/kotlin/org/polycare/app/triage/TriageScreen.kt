@@ -56,13 +56,13 @@ fun TriageScreen(contentPadding: PaddingValues, onBack: () -> Unit, viewModel: T
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.size(40.dp).background(Brand.Glass, CircleShape).clickable(onClick = onBack),
+                Modifier.size(40.dp).background(Brand.Rose.copy(alpha = 0.10f), CircleShape).clickable(onClick = onBack),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Brand.Ink, modifier = Modifier.size(20.dp))
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Brand.Rose, modifier = Modifier.size(20.dp))
             }
             Spacer(Modifier.width(12.dp))
-            SectionLabel("Triage", color = Brand.Plum)
+            SectionLabel("Triage", color = Brand.Rose)
         }
 
         Spacer(Modifier.height(20.dp))

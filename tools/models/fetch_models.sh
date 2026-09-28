@@ -14,6 +14,10 @@ FILES=(
   "multilingual-e5-small/tokenizer.json|https://huggingface.co/Xenova/multilingual-e5-small/resolve/761b726dd34fb83930e26aab4e9ac3899aa1fa78/tokenizer.json|0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39"
   "qwen2.5-1.5b-instruct/qwen2.5-1.5b-instruct-q4_k_m.gguf|https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/91cad51170dc346986eccefdc2dd33a9da36ead9/qwen2.5-1.5b-instruct-q4_k_m.gguf|6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e"
   "whisper/ggml-base-q5_1.bin|https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base-q5_1.bin|422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898"
+  # "small" replaced "base" as the shipped voice model: base's Hindi transcription was tested
+  # (tools/... on-device TTS round-trip, see WORKLOG) and came back as wrong-script garbage, not
+  # just imperfect. base.bin is kept above for the size/RAM comparison, not deleted.
+  "whisper/ggml-small-q5_1.bin|https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small-q5_1.bin|ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb"
 )
 
 for entry in "${FILES[@]}"; do

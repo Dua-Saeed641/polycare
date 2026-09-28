@@ -59,13 +59,13 @@ fun MemoryScreen(contentPadding: PaddingValues, onBack: () -> Unit, viewModel: M
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(40.dp).clip(CircleShape).background(Brand.Glass).clickable(onClick = onBack),
+                    Modifier.size(40.dp).clip(CircleShape).background(Brand.PlumDeep.copy(alpha = 0.10f)).clickable(onClick = onBack),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Brand.Ink, modifier = Modifier.size(20.dp))
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Brand.PlumDeep, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(12.dp))
-                SectionLabel("What this phone knows", color = Brand.Plum)
+                SectionLabel("What this phone knows", color = Brand.PlumDeep)
             }
         }
 

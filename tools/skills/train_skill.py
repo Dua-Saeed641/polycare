@@ -76,11 +76,18 @@ SKILLS = {
         "title": "Maternal & Newborn Care",
         "sources": {"asha-module-6"},
         "prompt": "Summarize the key guidance in this passage on maternal and newborn care.",
+        # Short skill-card description embedded once (multilingual-e5, same as the knowledge
+        # base) and compared to each question's embedding for routing — ARCHITECTURE.md §5.1's
+        # cosine-similarity routing, not a keyword list or a second model.
+        "card": "Maternal and newborn care: pregnancy check-ups, danger signs in pregnancy, "
+                "labour and delivery, breastfeeding, and care of a newborn baby.",
     },
     "child-health": {
         "title": "Child Health & Nutrition",
         "sources": {"asha-module-7"},
         "prompt": "Summarize the key guidance in this passage on child health and nutrition.",
+        "card": "Child health and nutrition: growth monitoring, immunisation schedule, common "
+                "childhood illness such as diarrhoea and fever, and feeding a young child.",
     },
 }
 
@@ -236,6 +243,7 @@ def main() -> None:
     entry = {
         "id": args.skill,
         "title": SKILLS[args.skill]["title"],
+        "card": SKILLS[args.skill]["card"],
         "file": gguf_path.name,
         "sha256": sha256(gguf_path),
         "sizeBytes": gguf_path.stat().st_size,

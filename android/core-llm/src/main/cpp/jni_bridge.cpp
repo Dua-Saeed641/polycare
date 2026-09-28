@@ -88,7 +88,7 @@ Java_org_polycare_llm_LlamaNative_backendInit(JNIEnv *, jobject) {
 }
 
 JNIEXPORT jlong JNICALL
-Java_org_polycare_llm_LlamaNative_loadModel(JNIEnv *env, jobject, jstring modelPath, jint nCtx, jint nThreads) {
+Java_org_polycare_llm_LlamaNative_loadModel(JNIEnv *env, jobject, jstring modelPath, jint nCtx, jint nThreads, jint nThreadsBatch) {
     try {
         auto path = jstringToUtf8(env, modelPath);
         llama_model_params mparams = llama_model_default_params();
@@ -101,8 +101,15 @@ Java_org_polycare_llm_LlamaNative_loadModel(JNIEnv *env, jobject, jstring modelP
         llama_context_params cparams = llama_context_default_params();
         cparams.n_ctx = (uint32_t) nCtx;
         cparams.n_batch = std::min<uint32_t>(512, (uint32_t) nCtx);
+        // Deliberately different thread counts: decode is one small matmul per token, memory-
+        // bandwidth-bound, and on a big.LITTLE phone a bigger thread count drags every layer's
+        // barrier down to the slowest (LITTLE) core; prefill batches the whole prompt in one
+        // compute-bound matmul and benefits from every core, stragglers included. Measured on
+        // 2406ERN9CI (6xA55 @1.96GHz + 2xA76 @2.3GHz): nThreads=2/nThreadsBatch=6 gave 5.42 tok/s
+        // decode (vs 4.00 at nThreads=6) while keeping prefill at 10.4 tok/s (vs 5.6 at nThreads=2)
+        // — see STATUS.md. Not yet re-validated on other devices in the fleet.
         cparams.n_threads = nThreads;
-        cparams.n_threads_batch = nThreads;
+        cparams.n_threads_batch = nThreadsBatch;
         llama_context *ctx = llama_init_from_model(model, cparams);
         if (!ctx) {
             LOGE("context init failed");
@@ -113,7 +120,7 @@ Java_org_polycare_llm_LlamaNative_loadModel(JNIEnv *env, jobject, jstring modelP
         engine->model = model;
         engine->ctx = ctx;
         engine->vocab = llama_model_get_vocab(model);
-        LOGI("model loaded: %s (n_ctx=%d, n_threads=%d)", path.c_str(), nCtx, nThreads);
+        LOGI("model loaded: %s (n_ctx=%d, n_threads=%d, n_threads_batch=%d)", path.c_str(), nCtx, nThreads, nThreadsBatch);
         return toHandle(engine);
     } catch (const std::exception &e) {
         LOGE("loadModel exception: %s", e.what());

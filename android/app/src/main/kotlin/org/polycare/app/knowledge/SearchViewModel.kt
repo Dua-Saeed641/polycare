@@ -39,6 +39,10 @@ class SearchViewModel @Inject constructor(
     private val _ui = MutableStateFlow<SearchUi>(SearchUi.Idle)
     val ui: StateFlow<SearchUi> = _ui.asStateFlow()
 
+    // Set synchronously (before the first suspension point in run()) so a query already in
+    // flight is visible to a second, concurrent caller immediately — see run()'s comment.
+    private var activeQuery: String? = null
+
     init {
         // Warm both up so the first search is fast.
         viewModelScope.launch {
@@ -63,13 +67,27 @@ class SearchViewModel @Inject constructor(
     }
 
     private suspend fun run(q: String) {
-        _ui.value = SearchUi.Searching
-        val result = knowledge.search(q)
-        _ui.value = when {
-            result != null -> SearchUi.Results(q, result)
-            knowledge.state.value is KnowledgeRepository.State.NotInstalled -> SearchUi.Unavailable("Knowledge base not installed yet")
-            embedders.state.value is EmbedderProvider.State.Unavailable -> SearchUi.Unavailable("Language model not installed yet")
-            else -> SearchUi.Unavailable("Search is not available right now")
+        // searchNow() both runs immediately and updates _query, which the debounced pipeline
+        // above also observes independently — so an explicit search (submit, suggestion chip,
+        // debug launch) used to run the embed + vector search TWICE, concurrently: once from the
+        // immediate call, again ~350ms later from the debounce firing on the same now-unchanged
+        // query, racing in before the first call had reached a Results state to compare against.
+        // activeQuery is set here, before the suspension point below, so the second caller sees
+        // it and bails immediately instead of racing (both coroutines run on the same dispatcher,
+        // so this check-then-set is effectively atomic).
+        if (activeQuery == q) return
+        activeQuery = q
+        try {
+            _ui.value = SearchUi.Searching
+            val result = knowledge.search(q)
+            _ui.value = when {
+                result != null -> SearchUi.Results(q, result)
+                knowledge.state.value is KnowledgeRepository.State.NotInstalled -> SearchUi.Unavailable("Knowledge base not installed yet")
+                embedders.state.value is EmbedderProvider.State.Unavailable -> SearchUi.Unavailable("Language model not installed yet")
+                else -> SearchUi.Unavailable("Search is not available right now")
+            }
+        } finally {
+            activeQuery = null
         }
     }
 

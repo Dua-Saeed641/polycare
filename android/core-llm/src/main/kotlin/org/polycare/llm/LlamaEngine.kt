@@ -111,14 +111,24 @@ class LlamaEngine private constructor(private val handle: Long) : Closeable {
         suspend fun load(
             modelFile: File,
             contextTokens: Int = PolyCareConfig.Llm.contextTokens,
-            threads: Int = defaultThreadCount(),
+            threads: Int = defaultDecodeThreadCount(),
+            threadsBatch: Int = defaultBatchThreadCount(),
         ): LlamaEngine? = withContext(Dispatcher) {
             LlamaNative.ensureLoaded()
-            val h = LlamaNative.loadModel(modelFile.absolutePath, contextTokens, threads)
+            val h = LlamaNative.loadModel(modelFile.absolutePath, contextTokens, threads, threadsBatch)
             if (h == 0L) null else LlamaEngine(h)
         }
 
-        /** Leaves a core free for the UI/system rather than saturating every core with decode threads. */
-        fun defaultThreadCount(): Int = (Runtime.getRuntime().availableProcessors() - 1).coerceIn(1, 6)
+        /**
+         * Decode (one small matmul per generated token) is memory-bandwidth-bound, and on a
+         * big.LITTLE phone more threads can be slower, not faster: every layer's barrier waits
+         * for the slowest core. A small, fixed thread count avoided that on the one device
+         * measured so far (STATUS.md); revisit once more devices are measured.
+         */
+        fun defaultDecodeThreadCount(): Int = 2
+
+        /** Prompt processing batches the whole prompt in one compute-bound matmul and benefits
+         * from every core, stragglers included — unlike decode, above. */
+        fun defaultBatchThreadCount(): Int = (Runtime.getRuntime().availableProcessors() - 1).coerceIn(1, 6)
     }
 }

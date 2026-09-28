@@ -1,22 +1,36 @@
 package org.polycare.app.ask
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.polycare.app.ai.LlmProvider
+import org.polycare.app.ai.SkillRouter
+import org.polycare.app.ai.VoiceRecorder
+import org.polycare.app.ai.WhisperProvider
 import org.polycare.app.knowledge.GapsRepository
 import org.polycare.app.knowledge.KnowledgeHit
 import org.polycare.app.knowledge.KnowledgeRepository
 import org.polycare.common.EventLog
 import org.polycare.common.EventLog.Category
+import org.polycare.common.EventLog.Level
 import org.polycare.common.PolyCareConfig
 import org.polycare.llm.GenerationEvent
 import org.polycare.llm.PromptFormat
 import javax.inject.Inject
+
+sealed interface VoiceUi {
+    data object Idle : VoiceUi
+    data object Recording : VoiceUi
+    data object Transcribing : VoiceUi
+    data class Failed(val reason: String) : VoiceUi
+}
 
 sealed interface AskUi {
     data object Idle : AskUi
@@ -34,6 +48,8 @@ sealed interface AskUi {
         val generated: String? = null,
         val generating: Boolean = false,
         val tokensPerSecond: Double? = null,
+        /** Which trained skill answered, if any (ARCHITECTURE.md §5.1); null means base model. */
+        val skill: String? = null,
     ) : AskUi
 
     data class NoAnswer(val gapLogged: Boolean) : AskUi
@@ -51,6 +67,9 @@ class AskViewModel @Inject constructor(
     private val knowledge: KnowledgeRepository,
     private val gaps: GapsRepository,
     private val llm: LlmProvider,
+    private val skillRouter: SkillRouter,
+    private val whisper: WhisperProvider,
+    @ApplicationContext private val context: Context,
     private val events: EventLog,
 ) : ViewModel() {
     private val _question = MutableStateFlow("")
@@ -59,12 +78,53 @@ class AskViewModel @Inject constructor(
     private val _ui = MutableStateFlow<AskUi>(AskUi.Idle)
     val ui: StateFlow<AskUi> = _ui.asStateFlow()
 
+    private val _voice = MutableStateFlow<VoiceUi>(VoiceUi.Idle)
+    val voice: StateFlow<VoiceUi> = _voice.asStateFlow()
+
+    private val recorder = VoiceRecorder(context)
+    private var recordingJob: Job? = null
+
     init {
         viewModelScope.launch { knowledge.open() }
     }
 
     fun onQuestionChange(value: String) {
         _question.value = value
+    }
+
+    /** Mic tapped: start capturing. No-op if already recording. */
+    fun startRecording() {
+        if (recordingJob != null) return
+        _voice.value = VoiceUi.Recording
+        recordingJob = viewModelScope.launch {
+            val pcm = recorder.recordUntilStopped()
+            recordingJob = null
+            if (pcm.isEmpty()) {
+                _voice.value = VoiceUi.Failed(
+                    if (!VoiceRecorder.hasPermission(context)) "Microphone permission needed" else "Could not record audio",
+                )
+                return@launch
+            }
+            _voice.value = VoiceUi.Transcribing
+            val ready = whisper.get()
+            if (ready == null) {
+                _voice.value = VoiceUi.Failed("Voice model not installed — type your question instead")
+                return@launch
+            }
+            val text = runCatching { ready.engine.transcribe(pcm, language = "auto") }.getOrElse {
+                events.record(Category.ASK, "Voice transcription failed", mapOf("error" to it.javaClass.simpleName), Level.ERROR)
+                _voice.value = VoiceUi.Failed("Could not understand that — try typing instead")
+                return@launch
+            }
+            events.record(Category.ASK, "Voice question transcribed", mapOf("chars" to text.length, "samples" to pcm.size))
+            _voice.value = VoiceUi.Idle
+            if (text.isNotBlank()) ask(text) else _voice.value = VoiceUi.Failed("Didn't catch that — try again")
+        }
+    }
+
+    /** Mic released or tapped again: stop capturing (the in-flight [startRecording] job finishes the rest). */
+    fun stopRecording() {
+        recorder.requestStop()
     }
 
     fun ask(value: String = _question.value) {
@@ -91,7 +151,19 @@ class AskViewModel @Inject constructor(
                 return@launch
             }
 
-            _ui.value = AskUi.Answered(top, confidence, lowConfidence, generating = true)
+            // ARCHITECTURE.md §5.1: route to a trained skill by comparing the question's embedding
+            // to each skill's card, blend the top two if they're close, or fall back to the base
+            // model alone. Routing never touches which passage was retrieved or the confidence
+            // badge above — it only picks which adapter, if any, explains that passage.
+            val route = skillRouter.route(value)
+            ready.engine.clearSkills()
+            for (w in route.weights) ready.engine.loadSkill(w.file)
+            ready.engine.setActiveSkills(route.weights.map { it.file to it.scale })
+            if (route.weights.isNotEmpty()) {
+                events.record(Category.ASK, "Skill routed", mapOf("skills" to route.weights.joinToString { "${it.id}=%.2f".format(it.scale) }))
+            }
+
+            _ui.value = AskUi.Answered(top, confidence, lowConfidence, generating = true, skill = route.label)
             val prompt = PromptFormat.ask(value, top.text, top.title)
             val text = StringBuilder()
             ready.engine.generate(prompt).collect { event ->
@@ -127,4 +199,8 @@ class AskViewModel @Inject constructor(
 
     private fun tokenize(text: String): Set<String> =
         Regex("[\\p{L}\\p{N}]+").findAll(text.lowercase()).map { it.value }.toSet()
+
+    override fun onCleared() {
+        recorder.requestStop() // leaving the screen mid-recording must not leak an open AudioRecord
+    }
 }

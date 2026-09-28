@@ -55,7 +55,7 @@ Every requirement from the problem statement (PS-03) and where it is delivered.
 - [x] llama.cpp runs Qwen2.5-1.5B on the phone; tokens/sec measured *(5.55 tok/s decode after fixing a Debug-vs-Release native build bug — see WORKLOG)*
 - [x] Two LoRA adapters loaded and switched per request *(both real, trained adapters — `maternal-newborn` + `child-health` — loaded and hot-swapped on-device; `LlamaEngineTest.loadsTwoSkillsAndSwitchesBetweenThem` passes, 59.4s. Both changed the base model's output; the two skills didn't differ from each other on this one generic test prompt — see STATUS)*
 - [x] Multilingual embedder runs under ~30 ms per query
-- [x] whisper.cpp transcribes a clip offline *(English sample verified word-for-word; multilingual base model, Hindi audio not yet tried — see STATUS)*
+- [x] whisper.cpp transcribes a clip offline *(English sample verified word-for-word; Hindi tested via an on-device TTS-synthesised fixture — the `base` model came back wrong-script garbage, swapped to `small` and Hindi now transcribes correctly in Devanagari; a real recorded human voice, not just TTS, is the one remaining gap — see STATUS)*
 - [x] ML Kit reads a sample MCP card (English + Devanagari) *(synthetic test card; both scripts read correctly on-device)*
 - [ ] Qdrant Cloud cluster created; partial snapshot pulled and applied on the phone *(not started — needs a Qdrant Cloud account)*
 - [x] One health LoRA skill trained and converted to GGUF *(two, in fact: `maternal-newborn` and `child-health`, real PEFT LoRA on real ASHA passages, converted to GGUF, verified on-device — see STATUS)*
@@ -63,19 +63,19 @@ Every requirement from the problem statement (PS-03) and where it is delivered.
 **Done when:** every item works, or a fallback is chosen and written down.
 
 ### M1 — On-device knowledge and search
-- [ ] Knowledge base built from ASHA modules, immunisation schedule, drug list and health-education content
-- [ ] Hybrid search with filters (topic, language, programme)
-- [ ] **Search** screen shows results, scores and sources
-- [ ] **Memory Inspector** screen: browse and filter what the phone knows
-- [ ] Search latency measured
+- [x] Knowledge base built from ASHA modules, immunisation schedule, drug list and health-education content *(1,240 passages, 6 documents, English + Hindi — see STATUS)*
+- [x] Hybrid search with filters (topic, language, programme) *(dense + BM25 sparse + RRF, keyword indexes on source/lang/programme/quality)*
+- [x] **Search** screen shows results, scores and sources *(on phone, English and Hindi)*
+- [x] **Memory Inspector** screen: browse and filter what the phone knows *(overview, filter chips, paginated browse — `QdrantEdgeVectorStore.facets()`/`.scroll()`, on-phone tested)*
+- [x] Search latency measured *(cold: embed 27ms/search 26ms; warm: embed ~20ms/search ~10–17ms)*
 
-**Done when:** correct protocol passages come back in airplane mode.
+**Done when:** correct protocol passages come back in airplane mode. **M1 complete, 5/5** (this checklist was out of sync with STATUS.md, which already recorded it done — fixed 2026-09-28).
 
 ### M2 — Offline health assistant
-- [ ] Voice or text question → skill routing → retrieval → streamed answer *(text→retrieval→answer works; voice and skill routing need whisper.cpp/LoRA, M0)*
-- [ ] Skill blending when a question spans two areas *(no skills exist yet, M0)*
-- [ ] Answer shows skill, sources and confidence badge; low confidence adds referral advice *(sources, confidence badge and referral advice work; no "skill" name yet)*
-- [ ] **Danger-sign triage**: Refer now / Refer within 24 h / Care at home, decided by rules, explained by the LLM *(the rule decision is real and tested; the LLM explanation is a template until M0's LLM lands)*
+- [ ] Voice or text question → skill routing → retrieval → streamed answer *(text→skill routing→retrieval→streamed answer fully works and is verified on-device — see STATUS. Voice: mic button, `VoiceRecorder`/`AudioRecord` capture, and transcribe-then-ask wiring are built and compile; live on-device capture itself is NOT yet verified — this MIUI build blocks both `adb input` taps and `adb shell pm grant`/`install -g`, so granting RECORD_AUDIO needs a human tap this session couldn't perform. Try the second test phone or tap "Allow" once by hand.)*
+- [x] Skill blending when a question spans two areas *(verified on-device: a pregnancy question routed `maternal-newborn=0.75, child-health=0.25`, a blended generation completed cleanly — see STATUS)*
+- [x] Answer shows skill, sources and confidence badge; low confidence adds referral advice *(`SkillRouter` picks the skill via cosine similarity on skill cards — ARCHITECTURE.md §5.1 — and Ask shows its name next to the tok/s line; verified on-device both directions, see STATUS)*
+- [x] **Danger-sign triage**: Refer now / Refer within 24 h / Care at home, decided by rules, explained by the LLM *(rule decision real and tested — 5 unit tests, every branch; `TriageViewModel` calls the real LLM via `PromptFormat.triageExplanation`, shown separately below the rule engine's own template text, falls back to the template if the model isn't installed — verified on-device earlier this session, see STATUS)*
 - [ ] Medicine helper and counselling cards *(the content is indexed and searchable via Ask/Search; no dedicated card UI yet)*
 - [x] Unanswered questions saved as **gaps**
 - [x] Models and skills verified by sha256 before loading; fallback on failure *(via `ArtifactVerifier`, already used for the embedder and knowledge base)*
@@ -84,12 +84,12 @@ Every requirement from the problem statement (PS-03) and where it is delivered.
 **Done when:** an ASHA gets a sourced answer and a triage decision with no signal. See [STATUS.md](STATUS.md) for exactly what runs today vs. what is templated pending the on-device LLM.
 
 ### M3 — Households, OCR and daily work
-- [ ] Household and member records with consent capture
-- [ ] **OCR scan** of MCP cards, lab reports, prescriptions and medicine strips → confirmed fields in the household record
-- [ ] Visit notes searchable by meaning
-- [ ] **Due list and visit planner**
-- [ ] Monthly report and incentive tracker filled from visits
-- [ ] Household data encrypted on the phone and never synced
+- [x] Household and member records with consent capture *(`HouseholdsRepository`/`HouseholdsScreen`; in-memory MVP, same honest pattern as `GapsRepository` — M4 moves both behind the op-log per invariant 1. A member cannot be added unless the household's consent checkbox was set when it was registered — enforced in the repository, not just the UI, and verified on-device via `--ez household_check true`: blocked without consent, allowed with consent. Wired into Home's tile and the nav drawer, no longer a "coming later" placeholder — see STATUS)*
+- [x] **OCR scan** of MCP cards, lab reports, prescriptions and medicine strips → confirmed fields in the household record *(`McpFieldExtractor`: keyword+regex on English+Devanagari OCR output extracts name/age/village/docType/clinicalNotes; `McpConfirmationCard` in `ScanScreen` shows pre-filled editable fields + consent gate; `ScanViewModel.saveAsHousehold()` creates household + member + ROUTINE visit on save; 4 unit tests. See STATUS)*
+- [x] Visit notes searchable by meaning *(`HouseholdsRepository.searchVisits()`: cosine-similarity on embedded note vectors when the embedder is ready, term-overlap fallback when not; asynchronous embedding on every `recordVisit()` call; wired into `DueListScreen`'s "Search notes" tab — see STATUS)*
+- [x] **Due list and visit planner** *(`DueListScreen`/`DueListViewModel`; seeded with realistic ASHA due items: ANC, PNC, immunization, family planning; filter chips by visit type; tap to expand → enter notes, flag high-risk, claim incentive; `recordDueVisit()` marks the item completed. Wired into `PolyCareRoot`, nav drawer, and Home tile. `--ez due_list_check true` debug hook exercises visit recording, due-item completion, search, and report on hardware. See STATUS)*
+- [x] Monthly report and incentive tracker filled from visits *(`HouseholdsRepository.monthlyReport()` aggregates all recorded visits by type; `DueListScreen` "Monthly report" tab shows per-type visit counts and incentive lines, total ASHA incentive, and an export-for-PHC-meeting button. See STATUS)*
+- [ ] Household data encrypted on the phone and never synced *(never synced: true today, trivially — nothing syncs yet. Encrypted at rest: not applicable yet since records are in-memory only and never touch disk; becomes a real, non-trivial requirement once M4's op-log persists them)*
 
 **Done when:** a visit can be recorded from a scan and shows up in the due list and report.
 

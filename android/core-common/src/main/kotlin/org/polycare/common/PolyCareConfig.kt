@@ -40,7 +40,12 @@ object PolyCareConfig {
     object Llm {
         /** Context window: prompt + generated tokens must fit inside this many tokens. */
         const val contextTokens = 2048
-        const val maxNewTokens = 256
+        /** A hard safety cap, not a target — the system prompt already asks for 2-4 sentences
+         * and the model stops at EOS well before this in practice (142 tokens was the longest
+         * real generation observed this session). Lower than the previous 256 so a model that
+         * fails to stop doesn't run needlessly long, without being tight enough to truncate a
+         * normal answer. */
+        const val maxNewTokens = 180
         const val temperature = 0.7f
         const val topP = 0.9f
         /** Per-request LoRA scale when a single skill is the clear match (no blending). */

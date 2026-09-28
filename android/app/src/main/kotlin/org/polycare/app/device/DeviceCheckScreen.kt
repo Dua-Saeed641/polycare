@@ -17,7 +17,10 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,6 +44,7 @@ import org.polycare.governor.Rung
 fun DeviceCheckScreen(
     contentPadding: PaddingValues,
     autoBenchPoints: Int? = null,
+    onMenu: () -> Unit = {},
     viewModel: DeviceCheckViewModel = hiltViewModel(),
     benchViewModel: VectorBenchViewModel = hiltViewModel(),
 ) {
@@ -64,7 +68,14 @@ fun DeviceCheckScreen(
             .padding(contentPadding)
             .padding(horizontal = 20.dp),
     ) {
-        Spacer(Modifier.height(40.dp))
+        Spacer(Modifier.height(24.dp))
+        Box(
+            Modifier.size(36.dp).clip(CircleShape).background(Brand.Glass).clickable(onClick = onMenu),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Outlined.Menu, contentDescription = "Menu", tint = Brand.Ink, modifier = Modifier.size(18.dp))
+        }
+        Spacer(Modifier.height(16.dp))
         SectionLabel("System", color = Brand.Plum)
         Spacer(Modifier.height(10.dp))
         Text("How this phone runs PolyCare", style = MaterialTheme.typography.displaySmall, color = Brand.Ink)

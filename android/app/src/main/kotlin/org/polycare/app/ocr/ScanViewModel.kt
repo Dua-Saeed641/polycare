@@ -13,12 +13,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.polycare.app.households.HouseholdsRepository
+import org.polycare.app.households.VisitType
 import javax.inject.Inject
 
 sealed interface ScanUi {
     data object Idle : ScanUi
     data object Recognizing : ScanUi
-    data class Done(val result: OcrEngine.Result) : ScanUi
+    data class Done(val result: OcrEngine.Result, val candidates: McpFieldExtractor.Candidates, val saved: Boolean = false) : ScanUi
     data class Failed(val reason: String) : ScanUi
 }
 
@@ -26,6 +28,7 @@ sealed interface ScanUi {
 class ScanViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val ocr: OcrEngine,
+    private val households: HouseholdsRepository,
 ) : ViewModel() {
     private val _ui = MutableStateFlow<ScanUi>(ScanUi.Idle)
     val ui: StateFlow<ScanUi> = _ui.asStateFlow()
@@ -50,7 +53,7 @@ class ScanViewModel @Inject constructor(
             }
             val (bitmap, degrees) = loaded
             _ui.value = runCatching { ocr.recognize(bitmap, degrees) }
-                .fold({ ScanUi.Done(it) }, { ScanUi.Failed(it.message ?: "OCR failed") })
+                .fold({ done(it) }, { ScanUi.Failed(it.message ?: "OCR failed") })
         }
     }
 
@@ -67,7 +70,37 @@ class ScanViewModel @Inject constructor(
                 return@launch
             }
             _ui.value = runCatching { ocr.recognize(bitmap) }
-                .fold({ ScanUi.Done(it) }, { ScanUi.Failed(it.message ?: "OCR failed") })
+                .fold({ done(it) }, { ScanUi.Failed(it.message ?: "OCR failed") })
         }
+    }
+
+    private fun done(result: OcrEngine.Result): ScanUi.Done =
+        ScanUi.Done(result, McpFieldExtractor.extract(result.latinText, result.devanagariText))
+
+    /**
+     * M3: "OCR scan... → confirmed fields in the household record." [name]/[village] are
+     * whatever the ASHA worker confirmed on screen — pre-filled from [McpFieldExtractor]'s guess
+     * but hers to edit — never saved without an explicit consent tick, same rule as registering
+     * a household by hand on the Households screen.
+     */
+    fun saveAsHousehold(name: String, village: String, consentGiven: Boolean, age: Int? = null, notes: String? = null): Boolean {
+        if (name.isBlank() || village.isBlank() || !consentGiven) return false
+        val hh = households.addHousehold(name, village, consentGiven)
+        if (age != null) {
+            households.addMember(hh.id, name, age, "Beneficiary / Mother")
+        }
+        if (!notes.isNullOrBlank()) {
+            households.recordVisit(
+                householdId = hh.id,
+                memberId = null,
+                memberName = name,
+                type = VisitType.ROUTINE,
+                notes = "From OCR scan: $notes",
+                highRisk = false,
+                incentiveRupees = 0,
+            )
+        }
+        (_ui.value as? ScanUi.Done)?.let { _ui.value = it.copy(saved = true) }
+        return true
     }
 }

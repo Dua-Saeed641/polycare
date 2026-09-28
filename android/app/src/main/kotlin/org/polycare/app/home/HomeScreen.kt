@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.DocumentScanner
 import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MonitorHeart
 import androidx.compose.material.icons.outlined.Psychology
@@ -37,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -52,17 +54,26 @@ import org.polycare.app.ui.components.StatusPill
 import org.polycare.app.ui.components.Wordmark
 import org.polycare.app.ui.theme.Brand
 
-private data class Feature(val title: String, val caption: String, val icon: ImageVector, val milestone: String, val route: String? = null)
+private data class Feature(
+    val title: String,
+    val caption: String,
+    val icon: ImageVector,
+    val milestone: String,
+    val accent: Color,
+    val route: String? = null,
+)
 
+/** Each tool gets its own accent from the brand palette instead of one repeated chip colour —
+ * the grid should read as eight distinct tools at a glance, not eight copies of one tile. */
 private val Features = listOf(
-    Feature("Ask", "Text answers, offline", Icons.Outlined.Mic, "M2", route = "ask"),
-    Feature("Triage", "Danger signs & referral", Icons.Outlined.MonitorHeart, "M2", route = "triage"),
-    Feature("Search", "Hybrid search, offline", Icons.Outlined.Search, "M1", route = "search"),
-    Feature("Memory", "What this phone knows", Icons.Outlined.Psychology, "M1", route = "memory"),
-    Feature("Scan", "MCP cards & reports", Icons.Outlined.DocumentScanner, "M3", route = "scan"),
-    Feature("Households", "Families & visits", Icons.Outlined.Groups, "M3"),
-    Feature("Due list", "Today's visits", Icons.Outlined.CalendarMonth, "M3"),
-    Feature("Sync", "Qdrant Cloud", Icons.Outlined.Sync, "M6"),
+    Feature("Ask", "Text answers, offline", Icons.Outlined.Mic, "M2", Brand.Plum, route = "ask"),
+    Feature("Triage", "Danger signs & referral", Icons.Outlined.MonitorHeart, "M2", Brand.Rose, route = "triage"),
+    Feature("Search", "Hybrid search, offline", Icons.Outlined.Search, "M1", Brand.Magenta, route = "search"),
+    Feature("Memory", "What this phone knows", Icons.Outlined.Psychology, "M1", Brand.PlumDeep, route = "memory"),
+    Feature("Scan", "MCP cards & reports", Icons.Outlined.DocumentScanner, "M3", Brand.Positive, route = "scan"),
+    Feature("Households", "Families & visits", Icons.Outlined.Groups, "M3", Brand.Pink, route = "households"),
+    Feature("Due list", "Today's visits", Icons.Outlined.CalendarMonth, "M3", Brand.Red, route = "due-list"),
+    Feature("Sync", "Qdrant Cloud", Icons.Outlined.Sync, "M6", Brand.InkMuted),
 )
 
 @Composable
@@ -71,6 +82,7 @@ fun HomeScreen(
     onAsk: () -> Unit,
     onNavigate: (route: String) -> Unit,
     onNotReady: (feature: String, milestone: String) -> Unit,
+    onMenu: () -> Unit,
     viewModel: DeviceCheckViewModel = hiltViewModel(),
     status: HomeStatusViewModel = hiltViewModel(),
 ) {
@@ -90,7 +102,16 @@ fun HomeScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Wordmark(logoSize = 26.dp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(36.dp).clip(CircleShape).background(Brand.Glass).clickable(onClick = onMenu),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Outlined.Menu, contentDescription = "Menu", tint = Brand.Ink, modifier = Modifier.size(18.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Wordmark(logoSize = 26.dp)
+            }
             StatusPill("Offline ready", dot = Brand.Positive)
         }
 
@@ -187,13 +208,13 @@ private fun AskBar(onClick: () -> Unit) {
 
 @Composable
 private fun FeatureTile(feature: Feature, modifier: Modifier, onClick: () -> Unit) {
-    GlassCard(modifier.clip(MaterialTheme.shapes.large).clickable(onClick = onClick), padding = 18.dp) {
+    GlassCard(modifier.clip(MaterialTheme.shapes.large).clickable(onClick = onClick), padding = 18.dp, accent = feature.accent) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
             Box(
-                Modifier.size(40.dp).clip(CircleShape).background(Brand.PinkMist),
+                Modifier.size(40.dp).clip(CircleShape).background(feature.accent.copy(alpha = 0.14f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(feature.icon, contentDescription = null, tint = Brand.Plum, modifier = Modifier.size(20.dp))
+                Icon(feature.icon, contentDescription = null, tint = feature.accent, modifier = Modifier.size(20.dp))
             }
             Icon(
                 Icons.AutoMirrored.Outlined.ArrowForward,

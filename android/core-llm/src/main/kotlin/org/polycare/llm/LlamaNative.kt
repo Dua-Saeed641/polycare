@@ -27,7 +27,7 @@ internal object LlamaNative {
 
     external fun backendInit()
 
-    external fun loadModel(modelPath: String, nCtx: Int, nThreads: Int): Long
+    external fun loadModel(modelPath: String, nCtx: Int, nThreads: Int, nThreadsBatch: Int): Long
 
     external fun freeModel(handle: Long)
 

@@ -1,5 +1,8 @@
 package org.polycare.app.ask
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,6 +26,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -32,14 +36,17 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.polycare.app.ai.VoiceRecorder
 import org.polycare.app.knowledge.KnowledgeHit
 import org.polycare.app.ui.components.GlassCard
 import org.polycare.app.ui.components.MetricRow
@@ -55,6 +62,11 @@ fun AskScreen(
 ) {
     val question by viewModel.question.collectAsStateWithLifecycle()
     val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val voice by viewModel.voice.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) viewModel.startRecording()
+    }
     LaunchedEffect(Unit) { if (initialQuery != null) viewModel.ask(initialQuery) }
 
     Column(
@@ -66,10 +78,10 @@ fun AskScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.size(40.dp).background(Brand.Glass, CircleShape).clickable(onClick = onBack),
+                Modifier.size(40.dp).background(Brand.Plum.copy(alpha = 0.10f), CircleShape).clickable(onClick = onBack),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Brand.Ink, modifier = Modifier.size(20.dp))
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Brand.Plum, modifier = Modifier.size(20.dp))
             }
             Spacer(Modifier.width(12.dp))
             SectionLabel("Ask", color = Brand.Plum)
@@ -79,9 +91,14 @@ fun AskScreen(
         Text("Ask about a symptom or medicine", style = MaterialTheme.typography.displaySmall, color = Brand.Ink)
         Spacer(Modifier.height(6.dp))
         Text(
-            "Text only for now — voice arrives once whisper.cpp is integrated.",
+            when (voice) {
+                VoiceUi.Recording -> "Listening — tap the mic again to stop."
+                VoiceUi.Transcribing -> "Transcribing on-device…"
+                is VoiceUi.Failed -> (voice as VoiceUi.Failed).reason
+                VoiceUi.Idle -> "Type your question, or tap the mic to speak it."
+            },
             style = MaterialTheme.typography.labelSmall,
-            color = Brand.InkMuted,
+            color = if (voice is VoiceUi.Failed) Brand.Rose else Brand.InkMuted,
         )
 
         Spacer(Modifier.height(20.dp))
@@ -102,6 +119,24 @@ fun AskScreen(
                     unfocusedIndicatorColor = Color.Transparent,
                 ),
             )
+            Spacer(Modifier.width(10.dp))
+            Box(
+                Modifier.size(52.dp).background(if (voice == VoiceUi.Recording) Brand.Rose else Brand.Glass, CircleShape)
+                    .clickable {
+                        when (voice) {
+                            VoiceUi.Recording -> viewModel.stopRecording()
+                            VoiceUi.Transcribing -> Unit
+                            else -> if (VoiceRecorder.hasPermission(context)) viewModel.startRecording() else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (voice == VoiceUi.Transcribing) {
+                    CircularProgressIndicator(Modifier.size(20.dp), color = Brand.Plum, strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Outlined.Mic, contentDescription = "Speak your question", tint = if (voice == VoiceUi.Recording) Brand.Paper else Brand.Plum)
+                }
+            }
             Spacer(Modifier.width(10.dp))
             Box(
                 Modifier.size(52.dp).background(Brand.Plum, CircleShape).clickable { viewModel.ask() },
@@ -155,8 +190,9 @@ private fun AnswerCard(state: AskUi.Answered) {
                 }
             } else if (state.tokensPerSecond != null) {
                 Spacer(Modifier.height(4.dp))
+                val model = if (state.skill != null) "Qwen2.5-1.5B + ${state.skill}" else "Qwen2.5-1.5B on-device"
                 Text(
-                    "Qwen2.5-1.5B on-device · %.1f tok/s".format(state.tokensPerSecond),
+                    "$model · %.1f tok/s".format(state.tokensPerSecond),
                     style = MaterialTheme.typography.labelSmall,
                     color = Brand.InkMuted,
                 )

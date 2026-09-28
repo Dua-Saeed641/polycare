@@ -87,13 +87,13 @@ fun SearchScreen(
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(40.dp).clip(CircleShape).background(Brand.Glass).clickable(onClick = onBack),
+                    Modifier.size(40.dp).clip(CircleShape).background(Brand.Magenta.copy(alpha = 0.10f)).clickable(onClick = onBack),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Brand.Ink, modifier = Modifier.size(20.dp))
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Brand.Magenta, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(12.dp))
-                SectionLabel("Search guidance", color = Brand.Plum)
+                SectionLabel("Search guidance", color = Brand.Magenta)
             }
         }
         item {

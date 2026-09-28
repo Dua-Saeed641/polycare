@@ -24,22 +24,31 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CameraAlt
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.polycare.app.ui.components.GlassCard
+import org.polycare.app.ui.components.Hairline
+import org.polycare.app.ui.components.LabelledField
 import org.polycare.app.ui.components.SectionLabel
+import org.polycare.app.ui.components.StatusPill
 import org.polycare.app.ui.theme.Brand
 
 @Composable
@@ -72,13 +81,13 @@ fun ScanScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.size(40.dp).background(Brand.Glass, CircleShape).clickable(onClick = onBack),
+                Modifier.size(40.dp).background(Brand.Positive.copy(alpha = 0.10f), CircleShape).clickable(onClick = onBack),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Brand.Ink, modifier = Modifier.size(20.dp))
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Brand.Positive, modifier = Modifier.size(20.dp))
             }
             Spacer(Modifier.width(12.dp))
-            SectionLabel("Scan", color = Brand.Plum)
+            SectionLabel("Scan", color = Brand.Positive)
         }
 
         Spacer(Modifier.height(20.dp))
@@ -109,7 +118,17 @@ fun ScanScreen(
             is ScanUi.Failed -> GlassCard(Modifier.fillMaxWidth()) {
                 Text(state.reason, style = MaterialTheme.typography.titleMedium, color = Brand.Rose)
             }
-            is ScanUi.Done -> ResultCard(state.result)
+            is ScanUi.Done -> {
+                McpConfirmationCard(
+                    candidates = state.candidates,
+                    saved = state.saved,
+                    onSave = { name, village, consent, age, notes ->
+                        viewModel.saveAsHousehold(name, village, consent, age, notes)
+                    },
+                )
+                Spacer(Modifier.height(20.dp))
+                ResultCard(state.result)
+            }
         }
         Spacer(Modifier.height(32.dp))
     }
@@ -124,6 +143,86 @@ private fun ActionButton(label: String, icon: androidx.compose.ui.graphics.vecto
             }
             Spacer(Modifier.height(10.dp))
             Text(label, style = MaterialTheme.typography.bodyMedium, color = Brand.Ink)
+        }
+    }
+}
+
+@Composable
+private fun McpConfirmationCard(
+    candidates: McpFieldExtractor.Candidates,
+    saved: Boolean,
+    onSave: (String, String, Boolean, Int?, String?) -> Boolean,
+) {
+    var name by remember(candidates.name) { mutableStateOf(candidates.name.orEmpty()) }
+    var village by remember(candidates.village) { mutableStateOf(candidates.village.orEmpty()) }
+    var age by remember(candidates.age) { mutableStateOf(candidates.age?.toString().orEmpty()) }
+    var notes by remember(candidates.clinicalNotes) { mutableStateOf(candidates.clinicalNotes.orEmpty()) }
+    var consent by remember { mutableStateOf(false) }
+
+    GlassCard(Modifier.fillMaxWidth(), accent = Brand.Positive) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            SectionLabel("Confirmed Fields", color = Brand.Positive)
+            StatusPill(candidates.docType, dot = Brand.Positive)
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "Review pre-filled fields from OCR before recording into household memory:",
+            style = MaterialTheme.typography.labelSmall,
+            color = Brand.InkMuted,
+        )
+
+        Spacer(Modifier.height(12.dp))
+        LabelledField("Head of household / Mother", name) { name = it }
+        Spacer(Modifier.height(10.dp))
+        LabelledField("Village / Area", village) { village = it }
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LabelledField("Age", age, modifier = Modifier.weight(0.35f), keyboardType = KeyboardType.Number) {
+                age = it.filter(Char::isDigit)
+            }
+            LabelledField("Clinical Notes / Rx", notes, modifier = Modifier.weight(0.65f)) { notes = it }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { consent = !consent }) {
+            Checkbox(checked = consent, onCheckedChange = { consent = it }, colors = CheckboxDefaults.colors(checkedColor = Brand.Positive))
+            Spacer(Modifier.width(4.dp))
+            Text(
+                "Family gave verbal consent to store this health record on device",
+                style = MaterialTheme.typography.bodySmall,
+                color = Brand.Ink,
+            )
+        }
+
+        Spacer(Modifier.height(14.dp))
+        if (saved) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Brand.Positive.copy(alpha = 0.12f), MaterialTheme.shapes.large)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Brand.Positive, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Saved to household & visit records", style = MaterialTheme.typography.titleSmall, color = Brand.Positive)
+            }
+        } else {
+            val canSave = name.isNotBlank() && village.isNotBlank() && consent
+            Row(
+                Modifier
+                    .background(if (canSave) Brand.Positive else Brand.Line, MaterialTheme.shapes.large)
+                    .clickable(enabled = canSave) {
+                        onSave(name, village, consent, age.toIntOrNull(), notes.ifBlank { null })
+                    }
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+            ) {
+                Text("Save to Households", style = MaterialTheme.typography.titleSmall, color = if (canSave) Brand.Paper else Brand.InkMuted)
+            }
+            if (name.isNotBlank() && village.isNotBlank() && !consent) {
+                Spacer(Modifier.height(8.dp))
+                Text("Consent is required before saving to household memory.", style = MaterialTheme.typography.labelSmall, color = Brand.Rose)
+            }
         }
     }
 }

@@ -2,6 +2,8 @@ package org.polycare.app
 
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -10,11 +12,13 @@ import androidx.lifecycle.lifecycleScope
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.polycare.app.ai.EmbedSelfCheck
 import org.polycare.app.ai.EmbedderProvider
 import org.polycare.app.ai.LlmProvider
 import org.polycare.app.ai.LlmSelfCheck
 import org.polycare.app.ai.SkillsRepository
+import org.polycare.app.ai.VoiceRecorder
 import org.polycare.app.ai.WavFile
 import org.polycare.app.ai.WhisperProvider
 import org.polycare.app.ui.PolyCareRoot
@@ -32,6 +36,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var llmProvider: LlmProvider
     @Inject lateinit var whisperProvider: WhisperProvider
     @Inject lateinit var skillsRepository: SkillsRepository
+    @Inject lateinit var householdsRepository: org.polycare.app.households.HouseholdsRepository
     @Inject lateinit var events: EventLog
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,6 +45,10 @@ class MainActivity : ComponentActivity() {
         if (isDebuggable() && intent.getBooleanExtra(EXTRA_EMBED_CHECK, false)) runEmbedCheck()
         if (isDebuggable() && intent.getBooleanExtra(EXTRA_LLM_CHECK, false)) runLlmCheck()
         if (isDebuggable() && intent.getBooleanExtra(EXTRA_SKILL_CHECK, false)) runSkillCheck()
+        if (isDebuggable() && intent.getBooleanExtra(EXTRA_VOICE_CHECK, false)) runVoiceCheck()
+        if (isDebuggable() && intent.getBooleanExtra(EXTRA_HOUSEHOLD_CHECK, false)) runHouseholdCheck()
+        if (isDebuggable() && intent.getBooleanExtra(EXTRA_DUE_LIST_CHECK, false)) runDueListCheck()
+        if (isDebuggable() && intent.getBooleanExtra(EXTRA_HINDI_CHECK, false)) runHindiCheck()
         debugWhisperWavPath()?.let(::runWhisperCheck)
         setContent {
             PolyCareTheme {
@@ -50,6 +59,7 @@ class MainActivity : ComponentActivity() {
                     debugTriage = debugTriageRequest(),
                     debugRoute = debugRouteRequest(),
                     debugOcrImagePath = debugOcrImagePath(),
+                    debugOpenDrawer = isDebuggable() && intent.getBooleanExtra(EXTRA_OPEN_DRAWER, false),
                 )
             }
         }
@@ -233,6 +243,177 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Debug builds only: `adb shell am start -n org.polycare.app/.MainActivity --ez voice_check true`
+     * (grant the mic permission first: `adb shell pm grant org.polycare.app android.permission.RECORD_AUDIO`).
+     * Exercises [VoiceRecorder] end to end — permission check, `AudioRecord` open, a real capture
+     * window, teardown — independent of Ask's UI (which needs a tap this harness can't send).
+     * Logs whether the captured samples look like real audio (non-zero variance) rather than a
+     * silent/failed capture, and — if whisper is installed — what it transcribed. Results in
+     * logcat tag PolyCareWhisper.
+     */
+    private fun runVoiceCheck() {
+        lifecycleScope.launch(Dispatchers.Default) {
+            if (!VoiceRecorder.hasPermission(this@MainActivity)) {
+                Log.w(WHISPER_TAG, "voice_check: RECORD_AUDIO not granted — adb shell pm grant org.polycare.app android.permission.RECORD_AUDIO")
+                return@launch
+            }
+            val recorder = VoiceRecorder(this@MainActivity)
+            launch(Dispatchers.Default) {
+                kotlinx.coroutines.delay(4_000) // stand-in for the UI's "tap again to stop" — no tap available here
+                recorder.requestStop()
+            }
+            val t0 = System.nanoTime()
+            val pcm = recorder.recordUntilStopped()
+            val ms = (System.nanoTime() - t0) / 1_000_000
+            if (pcm.isEmpty()) {
+                Log.w(WHISPER_TAG, "voice_check: captured 0 samples in ${ms}ms — AudioRecord failed to open")
+                return@launch
+            }
+            val mean = pcm.map { it.toInt() }.average()
+            val variance = pcm.map { (it - mean) * (it - mean) }.average()
+            Log.i(WHISPER_TAG, "voice_check captured samples=${pcm.size} durationMs=$ms variance=${"%.1f".format(variance)}")
+            events.record(
+                EventLog.Category.ASK, "Voice capture self-check",
+                mapOf("samples" to pcm.size, "durationMs" to ms, "looksLikeAudio" to (variance > 1.0)),
+            )
+            val ready = whisperProvider.get() ?: return@launch
+            val text = ready.engine.transcribe(pcm, language = "auto")
+            Log.i(WHISPER_TAG, "voice_check transcribed text=\"$text\"")
+        }
+    }
+
+    /**
+     * Debug builds only: `adb shell am start -n org.polycare.app/.MainActivity --ez hindi_check true`.
+     * whisper.cpp was only ever verified against English audio (no Hindi clip was available on
+     * hand); this closes that gap without needing a recording, using Android's own Hindi TTS
+     * voice to synthesise a known phrase on-device, then feeding that straight into the same
+     * `WhisperEngine.transcribe()` path a real recording would use. Not a substitute for a real
+     * human voice (TTS is cleaner audio than a phone mic in the field), but a genuine, reproducible
+     * check that Hindi text round-trips through synthesis → 16kHz PCM → whisper.cpp without the
+     * pipeline itself breaking on Devanagari. Logs to logcat tag PolyCareWhisper.
+     */
+    private fun runHindiCheck() {
+        lifecycleScope.launch(Dispatchers.Default) {
+            val phrase = "बच्चे को दस्त हो तो क्या करें" // "What to do if a child has diarrhoea" — a real Search suggestion already in the app
+            val wav = File(cacheDir, "hindi_check.wav")
+            val synthesised = runCatching { synthesiseHindiToFile(phrase, wav) }.getOrElse { e ->
+                Log.w(WHISPER_TAG, "hindi_check: TTS synthesis failed: ${e.message}")
+                return@launch
+            }
+            if (!synthesised) {
+                Log.w(WHISPER_TAG, "hindi_check: Hindi voice data not available on this device/TTS engine")
+                return@launch
+            }
+            val ready = whisperProvider.get()
+            if (ready == null) {
+                Log.w(WHISPER_TAG, "hindi_check: ${whisperProvider.state.value}")
+                return@launch
+            }
+            val pcm = runCatching { WavFile.readPcm16Mono16k(wav) }.getOrElse { e ->
+                Log.e(WHISPER_TAG, "hindi_check: could not read synthesised WAV", e)
+                return@launch
+            }
+            val text = ready.engine.transcribe(pcm, language = "hi")
+            Log.i(WHISPER_TAG, "hindi_check original=\"$phrase\" transcribed=\"$text\" samples=${pcm.size}")
+            events.record(
+                EventLog.Category.MODEL, "Hindi whisper self-check",
+                mapOf("samples" to pcm.size, "chars" to text.length),
+            )
+        }
+    }
+
+    /** Synthesises [text] to [file] as a 16-bit PCM WAV using Android's Hindi TTS voice. Returns
+     * false (not an exception) if no Hindi voice data is installed — the "needs one online moment
+     * to download a script/voice pack" situation already documented for ML Kit's Devanagari model. */
+    private suspend fun synthesiseHindiToFile(text: String, file: File): Boolean = suspendCancellableCoroutine { cont ->
+        var tts: TextToSpeech? = null
+        tts = TextToSpeech(this) { status ->
+            if (status != TextToSpeech.SUCCESS) {
+                cont.resume(false, onCancellation = null)
+                return@TextToSpeech
+            }
+            val engine = tts!!
+            val availability = engine.setLanguage(java.util.Locale("hi", "IN"))
+            if (availability == TextToSpeech.LANG_MISSING_DATA || availability == TextToSpeech.LANG_NOT_SUPPORTED) {
+                engine.shutdown()
+                cont.resume(false, onCancellation = null)
+                return@TextToSpeech
+            }
+            engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) = Unit
+                override fun onDone(utteranceId: String?) {
+                    engine.shutdown()
+                    if (cont.isActive) cont.resume(true, onCancellation = null)
+                }
+                override fun onError(utteranceId: String?) {
+                    engine.shutdown()
+                    if (cont.isActive) cont.resume(false, onCancellation = null)
+                }
+            })
+            val rc = engine.synthesizeToFile(text, null, file, "hindi_check")
+            if (rc != TextToSpeech.SUCCESS) {
+                engine.shutdown()
+                cont.resume(false, onCancellation = null)
+            }
+        }
+        cont.invokeOnCancellation { tts?.shutdown() }
+    }
+
+    /**
+     * Debug builds only: `adb shell am start -n org.polycare.app/.MainActivity --ez household_check true`.
+     * Exercises [org.polycare.app.households.HouseholdsRepository]'s consent rule directly — no
+     * tap needed to prove the one safety-critical piece of M3's first slice: a member cannot be
+     * added to a household that hasn't given consent. Logs to logcat tag PolyCareEvent (via the
+     * normal event log, not a dedicated tag, since this is plain business logic, not a native/ML
+     * pipeline check).
+     */
+    private fun runHouseholdCheck() {
+        val noConsent = householdsRepository.addHousehold("Test (no consent)", "Test village", consentGiven = false)
+        val blockedMember = householdsRepository.addMember(noConsent.id, "Should not be added", 5, "Child")
+        val withConsent = householdsRepository.addHousehold("Test (consent given)", "Test village", consentGiven = true)
+        val allowedMember = householdsRepository.addMember(withConsent.id, "Should be added", 5, "Child")
+        Log.i(
+            "PolyCareEvent",
+            "household_check noConsentBlocked=${blockedMember == null} withConsentAllowed=${allowedMember != null} " +
+                "households=${householdsRepository.households.value.size} members=${householdsRepository.members.value.size}",
+        )
+    }
+
+    /**
+     * Debug builds only: `adb shell am start -n org.polycare.app/.MainActivity --ez due_list_check true`.
+     * Tests visit recording, due item completion, semantic search over visit notes, and the monthly
+     * incentive report computation on real hardware (M3: Due list, visit notes, incentive tracker).
+     */
+    private fun runDueListCheck() {
+        lifecycleScope.launch(Dispatchers.Default) {
+            val hh = householdsRepository.addHousehold("Asha Devi", "Rampur", consentGiven = true)
+            val member = householdsRepository.addMember(hh.id, "Asha Devi", 22, "Mother")
+            val pendingBefore = householdsRepository.dueItems.value.count { !it.completed }
+            val firstDue = householdsRepository.dueItems.value.firstOrNull { !it.completed }
+
+            val visit = householdsRepository.recordVisit(
+                householdId = hh.id,
+                memberId = member?.id,
+                memberName = "Asha Devi",
+                type = org.polycare.app.households.VisitType.ANC,
+                notes = "3rd ANC checkup completed. BP 120/80 normal. Advised IFA tablets.",
+                highRisk = false,
+                dueItemId = firstDue?.id,
+            )
+
+            val pendingAfter = householdsRepository.dueItems.value.count { !it.completed }
+            val report = householdsRepository.monthlyReport()
+            val searchResults = householdsRepository.searchVisits("blood pressure IFA tablets")
+
+            Log.i(
+                "PolyCareEvent",
+                "due_list_check visitRecorded=${visit != null} incentiveEarned=₹${report.totalIncentiveRupees} " +
+                    "dueCompleted=${pendingAfter < pendingBefore} searchMatches=${searchResults.size}",
+            )
+        }
+    }
+
     private fun isDebuggable() = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
     private companion object {
@@ -240,11 +421,16 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_EMBED_CHECK = "embed_check"
         const val EXTRA_LLM_CHECK = "llm_check"
         const val EXTRA_SKILL_CHECK = "skill_check"
+        const val EXTRA_VOICE_CHECK = "voice_check"
+        const val EXTRA_HINDI_CHECK = "hindi_check"
+        const val EXTRA_HOUSEHOLD_CHECK = "household_check"
+        const val EXTRA_DUE_LIST_CHECK = "due_list_check"
         const val EXTRA_SEARCH_QUERY = "search_query"
         const val EXTRA_ASK_QUERY = "ask_query"
         const val EXTRA_OPEN_TRIAGE = "open_triage"
         const val EXTRA_OPEN_ROUTE = "open_route"
         const val EXTRA_OCR_IMAGE_PATH = "ocr_image_path"
+        const val EXTRA_OPEN_DRAWER = "open_drawer"
         const val EXTRA_WHISPER_WAV_PATH = "whisper_wav_path"
         const val EMBED_TAG = "PolyCareEmbed"
         const val LLM_TAG = "PolyCareLlm"
