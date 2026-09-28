@@ -72,16 +72,16 @@ Every requirement from the problem statement (PS-03) and where it is delivered.
 **Done when:** correct protocol passages come back in airplane mode.
 
 ### M2 — Offline health assistant
-- [ ] Voice or text question → skill routing → retrieval → streamed answer
-- [ ] Skill blending when a question spans two areas
-- [ ] Answer shows skill, sources and confidence badge; low confidence adds referral advice
-- [ ] **Danger-sign triage**: Refer now / Refer within 24 h / Care at home, decided by rules, explained by the LLM
-- [ ] Medicine helper and counselling cards
-- [ ] Unanswered questions saved as **gaps**
-- [ ] Models and skills verified by sha256 before loading; fallback on failure
-- [ ] **Speculative decoding from memory** with toggle and tokens/sec gauge
+- [ ] Voice or text question → skill routing → retrieval → streamed answer *(text→retrieval→answer works; voice and skill routing need whisper.cpp/LoRA, M0)*
+- [ ] Skill blending when a question spans two areas *(no skills exist yet, M0)*
+- [ ] Answer shows skill, sources and confidence badge; low confidence adds referral advice *(sources, confidence badge and referral advice work; no "skill" name yet)*
+- [ ] **Danger-sign triage**: Refer now / Refer within 24 h / Care at home, decided by rules, explained by the LLM *(the rule decision is real and tested; the LLM explanation is a template until M0's LLM lands)*
+- [ ] Medicine helper and counselling cards *(the content is indexed and searchable via Ask/Search; no dedicated card UI yet)*
+- [x] Unanswered questions saved as **gaps**
+- [x] Models and skills verified by sha256 before loading; fallback on failure *(via `ArtifactVerifier`, already used for the embedder and knowledge base)*
+- [ ] **Speculative decoding from memory** with toggle and tokens/sec gauge *(needs llama.cpp, M0)*
 
-**Done when:** an ASHA gets a sourced answer and a triage decision with no signal.
+**Done when:** an ASHA gets a sourced answer and a triage decision with no signal. See [STATUS.md](STATUS.md) for exactly what runs today vs. what is templated pending the on-device LLM.
 
 ### M3 — Households, OCR and daily work
 - [ ] Household and member records with consent capture

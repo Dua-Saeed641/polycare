@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.DocumentScanner
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MonitorHeart
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -50,11 +51,12 @@ import org.polycare.app.ui.components.StatusPill
 import org.polycare.app.ui.components.Wordmark
 import org.polycare.app.ui.theme.Brand
 
-private data class Feature(val title: String, val caption: String, val icon: ImageVector, val milestone: String)
+private data class Feature(val title: String, val caption: String, val icon: ImageVector, val milestone: String, val route: String? = null)
 
 private val Features = listOf(
-    Feature("Ask", "Voice answers, offline", Icons.Outlined.Mic, "M2"),
-    Feature("Triage", "Danger signs & referral", Icons.Outlined.MonitorHeart, "M2"),
+    Feature("Ask", "Text answers, offline", Icons.Outlined.Mic, "M2", route = "ask"),
+    Feature("Triage", "Danger signs & referral", Icons.Outlined.MonitorHeart, "M2", route = "triage"),
+    Feature("Search", "Hybrid search, offline", Icons.Outlined.Search, "M1", route = "search"),
     Feature("Scan", "MCP cards & reports", Icons.Outlined.DocumentScanner, "M3"),
     Feature("Households", "Families & visits", Icons.Outlined.Groups, "M3"),
     Feature("Due list", "Today's visits", Icons.Outlined.CalendarMonth, "M3"),
@@ -65,6 +67,7 @@ private val Features = listOf(
 fun HomeScreen(
     contentPadding: PaddingValues,
     onAsk: () -> Unit,
+    onNavigate: (route: String) -> Unit,
     onNotReady: (feature: String, milestone: String) -> Unit,
     viewModel: DeviceCheckViewModel = hiltViewModel(),
     status: HomeStatusViewModel = hiltViewModel(),
@@ -107,7 +110,9 @@ fun HomeScreen(
         Features.chunked(2).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 row.forEach { f ->
-                    FeatureTile(f, Modifier.weight(1f)) { onNotReady(f.title, f.milestone) }
+                    FeatureTile(f, Modifier.weight(1f)) {
+                        if (f.route != null) onNavigate(f.route) else onNotReady(f.title, f.milestone)
+                    }
                 }
             }
             Spacer(Modifier.height(12.dp))
