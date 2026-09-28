@@ -1,6 +1,7 @@
 # Gradle / Android
 .gradle/
 build/
+bin/
 local.properties
 *.iml
 .idea/
@@ -13,11 +14,14 @@ captures/
 # Rust
 native/**/target/
 
-# Models and large artifacts (downloaded, never committed)
+# Models and large artifacts (downloaded or trained, never committed)
 *.gguf
 *.onnx
 *.bin
+*.safetensors
 tools/models/**/tokenizer.json
+tools/models/qwen2.5-1.5b-instruct-hf/
+tools/skills/out/
 *.part
 *.quarantine
 
@@ -32,3 +36,7 @@ Thumbs.db
 # Qdrant Edge build
 native/qdrant/
 android/qdrant-edge/src/main/jniLibs/
+
+# llama.cpp / whisper.cpp source (fetched by native/fetch-*.sh, pinned by commit in the script, never committed)
+native/llama.cpp/
+native/whisper.cpp/

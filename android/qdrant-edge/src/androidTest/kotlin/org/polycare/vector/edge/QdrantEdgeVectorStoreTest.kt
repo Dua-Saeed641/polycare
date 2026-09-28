@@ -72,6 +72,31 @@ class QdrantEdgeVectorStoreTest {
     }
 
     @Test
+    fun facetsAndScrollBrowseTheShard() = runTest {
+        open().use { store ->
+            store.upsert(docs())
+
+            val byLang = store.facets("lang").toMap()
+            assertEquals(2L, byLang["hi"])
+            assertEquals(1L, byLang["en"])
+
+            val page1 = store.scroll(limit = 2)
+            assertEquals(2, page1.points.size)
+            assertTrue(page1.nextOffset != null)
+
+            val page2 = store.scroll(limit = 2, offset = page1.nextOffset)
+            assertEquals(1, page2.points.size)
+            assertEquals(null, page2.nextOffset)
+
+            val allIds = (page1.points + page2.points).map { it.id }.toSet()
+            assertEquals(setOf("anc-visits", "ifa-dose", "ors-mix"), allIds)
+
+            val hiOnly = store.scroll(filter = Filter(mapOf("lang" to setOf("hi"))), limit = 10)
+            assertEquals(setOf("anc-visits", "ors-mix"), hiOnly.points.map { it.id }.toSet())
+        }
+    }
+
+    @Test
     fun dataSurvivesReopen() = runTest {
         open().use { it.upsert(docs()) }
         open().use { store ->

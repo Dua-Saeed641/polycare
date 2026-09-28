@@ -76,7 +76,7 @@ fun TriageScreen(contentPadding: PaddingValues, onBack: () -> Unit, viewModel: T
         }
 
         Spacer(Modifier.height(20.dp))
-        DecisionCard(state.result.decision, state.result.explanation, state.result.sourceTitle)
+        DecisionCard(state.result.decision, state.result.explanation, state.result.sourceTitle, state.aiExplanation, state.generating)
 
         Spacer(Modifier.height(24.dp))
         SectionLabel("Mark what you see")
@@ -105,7 +105,13 @@ private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) 
 }
 
 @Composable
-private fun DecisionCard(decision: TriageDecision, explanation: String, sourceTitle: String) {
+private fun DecisionCard(
+    decision: TriageDecision,
+    explanation: String,
+    sourceTitle: String,
+    aiExplanation: String?,
+    generating: Boolean,
+) {
     val color = when (decision) {
         TriageDecision.REFER_NOW -> Brand.Red
         TriageDecision.REFER_24H -> Brand.Magenta
@@ -121,12 +127,33 @@ private fun DecisionCard(decision: TriageDecision, explanation: String, sourceTi
         Text(explanation, style = MaterialTheme.typography.bodyMedium, color = Brand.Ink)
         Spacer(Modifier.height(10.dp))
         MetricRow("Source", sourceTitle)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Decided by rules, not the on-device model — the AI explanation arrives once it is integrated.",
-            style = MaterialTheme.typography.labelSmall,
-            color = Brand.InkMuted,
-        )
+
+        when {
+            aiExplanation != null -> {
+                Spacer(Modifier.height(10.dp))
+                androidx.compose.material3.HorizontalDivider(color = Brand.LineSoft)
+                Spacer(Modifier.height(10.dp))
+                SectionLabel("In plain words", color = Brand.Plum)
+                Spacer(Modifier.height(6.dp))
+                Text(aiExplanation, style = MaterialTheme.typography.bodyMedium, color = Brand.Ink)
+                if (generating) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("Generating on-device…", style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted)
+                }
+            }
+            generating -> {
+                Spacer(Modifier.height(10.dp))
+                Text("Generating a plain-language explanation…", style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted)
+            }
+            else -> {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Decided by rules, not the on-device model — install the model for a plain-language explanation.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Brand.InkMuted,
+                )
+            }
+        }
     }
 }
 

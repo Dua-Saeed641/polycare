@@ -241,16 +241,6 @@ private fun HitCard(hit: KnowledgeHit) {
 }
 
 @Composable
-private fun Tag(text: String, background: androidx.compose.ui.graphics.Color, color: androidx.compose.ui.graphics.Color) {
-    Text(
-        text.uppercase(),
-        style = MaterialTheme.typography.labelSmall,
-        color = color,
-        modifier = Modifier.background(background, CircleShape).padding(horizontal = 10.dp, vertical = 4.dp),
-    )
-}
-
-@Composable
 private fun Chip(text: String, onClick: () -> Unit) {
     Text(
         text,
@@ -263,12 +253,4 @@ private fun Chip(text: String, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
     )
-}
-
-private fun shortSource(id: String): String = when (id.removeSuffix("-hi")) {
-    "asha-module-6" -> "Module 6"
-    "asha-module-7" -> "Module 7"
-    "asha-induction" -> "Induction module"
-    "nis" -> "Immunization schedule"
-    else -> id
 }

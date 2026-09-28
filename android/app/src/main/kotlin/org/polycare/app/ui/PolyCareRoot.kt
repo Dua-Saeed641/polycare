@@ -45,7 +45,9 @@ import kotlinx.coroutines.launch
 import org.polycare.app.ask.AskScreen
 import org.polycare.app.device.DeviceCheckScreen
 import org.polycare.app.home.HomeScreen
+import org.polycare.app.knowledge.MemoryScreen
 import org.polycare.app.knowledge.SearchScreen
+import org.polycare.app.ocr.ScanScreen
 import org.polycare.app.triage.TriageScreen
 import org.polycare.app.ui.components.BrandBackground
 import org.polycare.app.ui.theme.Brand
@@ -58,9 +60,18 @@ private enum class Tab(val route: String, val label: String, val icon: ImageVect
 private const val SEARCH_ROUTE = "search"
 private const val ASK_ROUTE = "ask"
 private const val TRIAGE_ROUTE = "triage"
+private const val MEMORY_ROUTE = "memory"
+private const val SCAN_ROUTE = "scan"
 
 @Composable
-fun PolyCareRoot(autoBenchPoints: Int? = null, debugSearch: String? = null, debugAsk: String? = null, debugTriage: Boolean = false) {
+fun PolyCareRoot(
+    autoBenchPoints: Int? = null,
+    debugSearch: String? = null,
+    debugAsk: String? = null,
+    debugTriage: Boolean = false,
+    debugRoute: String? = null,
+    debugOcrImagePath: String? = null,
+) {
     val nav = rememberNavController()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -91,6 +102,8 @@ fun PolyCareRoot(autoBenchPoints: Int? = null, debugSearch: String? = null, debu
                 debugSearch != null -> SEARCH_ROUTE
                 debugAsk != null -> ASK_ROUTE
                 debugTriage -> TRIAGE_ROUTE
+                debugOcrImagePath != null -> SCAN_ROUTE
+                debugRoute != null -> debugRoute
                 else -> Tab.Home.route
             }
             NavHost(nav, startDestination = start) {
@@ -111,6 +124,8 @@ fun PolyCareRoot(autoBenchPoints: Int? = null, debugSearch: String? = null, debu
                 composable(SEARCH_ROUTE) { SearchScreen(contentPadding = content, onBack = { nav.popBackStack() }, initialQuery = debugSearch) }
                 composable(ASK_ROUTE) { AskScreen(contentPadding = content, onBack = { nav.popBackStack() }, initialQuery = debugAsk) }
                 composable(TRIAGE_ROUTE) { TriageScreen(contentPadding = content, onBack = { nav.popBackStack() }) }
+                composable(MEMORY_ROUTE) { MemoryScreen(contentPadding = content, onBack = { nav.popBackStack() }) }
+                composable(SCAN_ROUTE) { ScanScreen(contentPadding = content, onBack = { nav.popBackStack() }, debugImagePath = debugOcrImagePath) }
             }
         }
     }

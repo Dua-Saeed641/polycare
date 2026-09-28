@@ -49,16 +49,16 @@ Every requirement from the problem statement (PS-03) and where it is delivered.
 ## Milestones
 
 ### M0 — Foundations
-- [ ] Android project: app + core modules, Compose, Hilt, builds and installs on a real phone over adb
-- [ ] **Qdrant Edge** compiled for arm64 and callable from Kotlin: create shard, upsert, search
-- [ ] Hybrid search (dense + sparse + RRF) on Qdrant Edge, or RRF in Kotlin
-- [ ] llama.cpp runs Qwen2.5-1.5B on the phone; tokens/sec measured
-- [ ] Two LoRA adapters loaded and switched per request
-- [ ] Multilingual embedder runs under ~30 ms per query
-- [ ] whisper.cpp transcribes a Hindi clip offline
-- [ ] ML Kit reads a sample MCP card (English + Devanagari)
-- [ ] Qdrant Cloud cluster created; partial snapshot pulled and applied on the phone
-- [ ] One health LoRA skill trained and converted to GGUF
+- [x] Android project: app + core modules, Compose, Hilt, builds and installs on a real phone over adb
+- [x] **Qdrant Edge** compiled for arm64 and callable from Kotlin: create shard, upsert, search
+- [x] Hybrid search (dense + sparse + RRF) on Qdrant Edge, or RRF in Kotlin
+- [x] llama.cpp runs Qwen2.5-1.5B on the phone; tokens/sec measured *(5.55 tok/s decode after fixing a Debug-vs-Release native build bug — see WORKLOG)*
+- [x] Two LoRA adapters loaded and switched per request *(both real, trained adapters — `maternal-newborn` + `child-health` — loaded and hot-swapped on-device; `LlamaEngineTest.loadsTwoSkillsAndSwitchesBetweenThem` passes, 59.4s. Both changed the base model's output; the two skills didn't differ from each other on this one generic test prompt — see STATUS)*
+- [x] Multilingual embedder runs under ~30 ms per query
+- [x] whisper.cpp transcribes a clip offline *(English sample verified word-for-word; multilingual base model, Hindi audio not yet tried — see STATUS)*
+- [x] ML Kit reads a sample MCP card (English + Devanagari) *(synthetic test card; both scripts read correctly on-device)*
+- [ ] Qdrant Cloud cluster created; partial snapshot pulled and applied on the phone *(not started — needs a Qdrant Cloud account)*
+- [x] One health LoRA skill trained and converted to GGUF *(two, in fact: `maternal-newborn` and `child-health`, real PEFT LoRA on real ASHA passages, converted to GGUF, verified on-device — see STATUS)*
 
 **Done when:** every item works, or a fallback is chosen and written down.
 

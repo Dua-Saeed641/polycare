@@ -121,31 +121,64 @@ fun AskScreen(
                 Text(state.reason, style = MaterialTheme.typography.titleMedium, color = Brand.Ink)
             }
             is AskUi.NoAnswer -> NoAnswerCard()
-            is AskUi.Answered -> AnswerCard(state.hit, state.confidence, state.gapLogged)
+            is AskUi.Answered -> AnswerCard(state)
         }
         Spacer(Modifier.height(32.dp))
     }
 }
 
 @Composable
-private fun AnswerCard(hit: KnowledgeHit, confidence: Float, gapLogged: Boolean) {
-    val confidencePct = (confidence * 100).toInt()
-    val lowConfidence = confidence < org.polycare.common.PolyCareConfig.Routing.minSkillScore
+private fun AnswerCard(state: AskUi.Answered) {
+    val confidencePct = (state.confidence * 100).toInt()
+    val lowConfidence = state.confidence < org.polycare.common.PolyCareConfig.Routing.minSkillScore
     val confidenceColor = if (lowConfidence) Brand.Rose else Brand.Positive
 
     GlassCard(Modifier.fillMaxWidth(), padding = 20.dp) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            SectionLabel(if (hit.lang == "hi") "हिंदी" else "English")
+            SectionLabel(if (state.hit.lang == "hi") "हिंदी" else "English")
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(8.dp).background(confidenceColor, CircleShape))
                 Spacer(Modifier.width(6.dp))
                 Text("$confidencePct% match", style = MaterialTheme.typography.labelSmall, color = confidenceColor)
             }
         }
+
+        if (state.generated != null) {
+            Spacer(Modifier.height(10.dp))
+            Text(state.generated, style = MaterialTheme.typography.bodyMedium, color = Brand.Ink, fontWeight = FontWeight.Medium)
+            if (state.generating) {
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(12.dp), color = Brand.Plum, strokeWidth = 1.5.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Generating on-device…", style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted)
+                }
+            } else if (state.tokensPerSecond != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Qwen2.5-1.5B on-device · %.1f tok/s".format(state.tokensPerSecond),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Brand.InkMuted,
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Text("Source passage", style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted)
+            Spacer(Modifier.height(4.dp))
+            Text(state.hit.text, style = MaterialTheme.typography.bodySmall, color = Brand.InkMuted, maxLines = 4)
+        } else if (state.generating) {
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(14.dp), color = Brand.Plum, strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("Thinking…", style = MaterialTheme.typography.bodyMedium, color = Brand.InkMuted)
+            }
+        } else {
+            Spacer(Modifier.height(10.dp))
+            Text(state.hit.text, style = MaterialTheme.typography.bodyMedium, color = Brand.Ink, fontWeight = FontWeight.Medium)
+        }
+
         Spacer(Modifier.height(10.dp))
-        Text(hit.text, style = MaterialTheme.typography.bodyMedium, color = Brand.Ink, fontWeight = FontWeight.Medium)
-        Spacer(Modifier.height(10.dp))
-        MetricRow("Source", "${hit.title} · p${hit.page}")
+        MetricRow("Source", "${state.hit.title} · p${state.hit.page}")
 
         if (lowConfidence) {
             Spacer(Modifier.height(10.dp))
@@ -155,16 +188,18 @@ private fun AnswerCard(hit: KnowledgeHit, confidence: Float, gapLogged: Boolean)
                 color = Brand.Rose,
             )
         }
-        if (gapLogged) {
+        if (state.gapLogged) {
             Spacer(Modifier.height(6.dp))
             Text("Saved as a gap for the next sync.", style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted)
         }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            "Shown as the closest matching passage — a generated explanation arrives once the on-device AI model is integrated.",
-            style = MaterialTheme.typography.labelSmall,
-            color = Brand.InkMuted,
-        )
+        if (state.generated == null && !state.generating) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Shown as the closest matching passage — install the on-device model for a generated explanation.",
+                style = MaterialTheme.typography.labelSmall,
+                color = Brand.InkMuted,
+            )
+        }
     }
 }
 

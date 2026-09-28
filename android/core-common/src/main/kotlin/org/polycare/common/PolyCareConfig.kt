@@ -37,6 +37,16 @@ object PolyCareConfig {
         const val maxClockDriftMs = 5L * 60 * 1000
     }
 
+    object Llm {
+        /** Context window: prompt + generated tokens must fit inside this many tokens. */
+        const val contextTokens = 2048
+        const val maxNewTokens = 256
+        const val temperature = 0.7f
+        const val topP = 0.9f
+        /** Per-request LoRA scale when a single skill is the clear match (no blending). */
+        const val singleSkillScale = 1.0f
+    }
+
     object Governor {
         /**
          * Minimum RAM (MB) as reported by the OS, which is always below the advertised size:

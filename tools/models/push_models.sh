@@ -27,7 +27,29 @@ push() {
   adb shell rm "$STAGE/$rel"
 }
 
+# Only pushed when present (fetch_models.sh) and not already on the phone at the same size —
+# for the ~1 GB LLM this is the difference between a few seconds and half a minute over USB.
+push_if_present() {
+  local rel="$1"
+  [ -f "$HERE/$rel" ] || return 0
+  local local_size remote_size
+  local_size="$(stat -c%s "$HERE/$rel" 2>/dev/null || stat -f%z "$HERE/$rel")"
+  remote_size="$(adb shell run-as "$PKG" stat -c%s "files/models/$rel" 2>/dev/null | tr -d '\r')" || remote_size=""
+  if [ "$remote_size" = "$local_size" ]; then
+    echo "ok (unchanged) $rel"
+  else
+    push "$rel"
+  fi
+}
+
 push multilingual-e5-small/model_quantized.onnx
 push multilingual-e5-small/e5_tokenizer.bin
 adb shell run-as "$PKG" ls -l files/models/multilingual-e5-small
+
+push_if_present qwen2.5-1.5b-instruct/qwen2.5-1.5b-instruct-q4_k_m.gguf
+adb shell run-as "$PKG" ls -l "files/models/qwen2.5-1.5b-instruct" 2>/dev/null || true
+
+push_if_present whisper/ggml-base-q5_1.bin
+adb shell run-as "$PKG" ls -l "files/models/whisper" 2>/dev/null || true
+
 echo "done"

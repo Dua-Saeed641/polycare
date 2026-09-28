@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- context.cacheDir/scans/ — matches CaptureUtils.newPhotoFile() in the Scan screen. -->
+    <cache-path name="scans" path="scans/" />
+</paths>

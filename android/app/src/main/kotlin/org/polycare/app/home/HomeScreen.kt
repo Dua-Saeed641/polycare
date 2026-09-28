@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.DocumentScanner
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MonitorHeart
+import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.Icon
@@ -57,7 +58,8 @@ private val Features = listOf(
     Feature("Ask", "Text answers, offline", Icons.Outlined.Mic, "M2", route = "ask"),
     Feature("Triage", "Danger signs & referral", Icons.Outlined.MonitorHeart, "M2", route = "triage"),
     Feature("Search", "Hybrid search, offline", Icons.Outlined.Search, "M1", route = "search"),
-    Feature("Scan", "MCP cards & reports", Icons.Outlined.DocumentScanner, "M3"),
+    Feature("Memory", "What this phone knows", Icons.Outlined.Psychology, "M1", route = "memory"),
+    Feature("Scan", "MCP cards & reports", Icons.Outlined.DocumentScanner, "M3", route = "scan"),
     Feature("Households", "Families & visits", Icons.Outlined.Groups, "M3"),
     Feature("Due list", "Today's visits", Icons.Outlined.CalendarMonth, "M3"),
     Feature("Sync", "Qdrant Cloud", Icons.Outlined.Sync, "M6"),
