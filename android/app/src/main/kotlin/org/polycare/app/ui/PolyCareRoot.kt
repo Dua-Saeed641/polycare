@@ -56,10 +56,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import kotlinx.coroutines.launch
 import org.polycare.app.ask.AskScreen
 import org.polycare.app.device.DeviceCheckScreen
@@ -178,7 +180,7 @@ fun PolyCareRoot(
                     composable(Tab.Home.route) {
                         HomeScreen(
                             contentPadding = content,
-                            onAsk = { go(ASK_ROUTE) },
+                            onAsk = { voice -> go(if (voice) "$ASK_ROUTE?voice=true" else ASK_ROUTE) },
                             onNavigate = ::go,
                             onNotReady = ::notReady,
                             onMenu = { scope.launch { drawerState.open() } },
@@ -188,7 +190,17 @@ fun PolyCareRoot(
                         DeviceCheckScreen(contentPadding = content, autoBenchPoints = autoBenchPoints, onMenu = { scope.launch { drawerState.open() } })
                     }
                     composable(SEARCH_ROUTE) { SearchScreen(contentPadding = content, onBack = { nav.popBackStack() }, initialQuery = debugSearch) }
-                    composable(ASK_ROUTE) { AskScreen(contentPadding = content, onBack = { nav.popBackStack() }, initialQuery = debugAsk) }
+                    composable(
+                        "$ASK_ROUTE?voice={voice}",
+                        arguments = listOf(navArgument("voice") { type = NavType.BoolType; defaultValue = false }),
+                    ) { entry ->
+                        AskScreen(
+                            contentPadding = content,
+                            onBack = { nav.popBackStack() },
+                            initialQuery = debugAsk,
+                            autoStartVoice = entry.arguments?.getBoolean("voice") ?: false,
+                        )
+                    }
                     composable(TRIAGE_ROUTE) { TriageScreen(contentPadding = content, onBack = { nav.popBackStack() }) }
                     composable(MEMORY_ROUTE) { MemoryScreen(contentPadding = content, onBack = { nav.popBackStack() }) }
                     composable(SCAN_ROUTE) { ScanScreen(contentPadding = content, onBack = { nav.popBackStack() }, debugImagePath = debugOcrImagePath) }

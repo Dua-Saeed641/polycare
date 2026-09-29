@@ -6,6 +6,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import org.polycare.app.ai.EmbedderProvider
 import org.polycare.app.ai.LlmProvider
+import org.polycare.app.households.HouseholdsRepository
 import org.polycare.app.knowledge.KnowledgeRepository
 import org.polycare.governor.DegradationLadder
 import org.polycare.governor.DeviceProbe
@@ -24,9 +25,14 @@ class HomeStatusViewModel @Inject constructor(
     embedderProvider: EmbedderProvider,
     llmProvider: LlmProvider,
     deviceProbe: DeviceProbe,
+    households: HouseholdsRepository,
 ) : ViewModel() {
     val knowledge = knowledgeRepository.state
     val embedder = embedderProvider.state
+    /** Recent visits, newest first — Home's "Recent activity" (replaces cards for Ask/Triage/
+     * Search, which are already one tap away in the bottom nav; showing the same three
+     * destinations a third time on Home was pure duplication). */
+    val recentVisits = households.visits
 
     init {
         viewModelScope.launch {

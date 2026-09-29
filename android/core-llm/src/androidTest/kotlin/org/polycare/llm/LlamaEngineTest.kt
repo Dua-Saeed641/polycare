@@ -13,13 +13,13 @@ import kotlin.time.Duration.Companion.minutes
 
 /**
  * Runs the real base model (and, when present, real trained skill adapters) on the phone's ARM
- * CPU. Needs `files/models/qwen2.5-1.5b-instruct/qwen2.5-1.5b-instruct-q4_k_m.gguf`:
- * `bash tools/models/push_models.sh`. Skills are optional: `bash tools/models/push_skills.sh`.
+ * CPU. Needs `files/models/${LlmArtifacts.baseModel.path}`: `bash tools/models/push_models.sh`.
+ * Skills are optional: `bash tools/models/push_skills.sh`.
  */
 @RunWith(AndroidJUnit4::class)
 class LlamaEngineTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
-    private val modelFile = File(context.filesDir, "models/qwen2.5-1.5b-instruct/qwen2.5-1.5b-instruct-q4_k_m.gguf")
+    private val modelFile = File(context.filesDir, "models/${LlmArtifacts.baseModel.path}")
     private val skillsDir = File(context.filesDir, "models/skills")
 
     @Test

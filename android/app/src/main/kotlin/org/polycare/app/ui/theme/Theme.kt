@@ -37,12 +37,15 @@ private val BrandColors = lightColorScheme(
     error = Brand.Red,
 )
 
+/** Tightened from an earlier, much rounder scale (28-36dp on cards/buttons) that read as a soft
+ * consumer-wellness template rather than a clinical tool. 8-18dp reads as structured/product,
+ * without going all the way to sharp corners. */
 private val BrandShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(20.dp),
-    large = RoundedCornerShape(28.dp),
-    extraLarge = RoundedCornerShape(36.dp),
+    extraSmall = RoundedCornerShape(4.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(10.dp),
+    large = RoundedCornerShape(14.dp),
+    extraLarge = RoundedCornerShape(18.dp),
 )
 
 @Composable

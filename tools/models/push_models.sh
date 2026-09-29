@@ -46,8 +46,8 @@ push multilingual-e5-small/model_quantized.onnx
 push multilingual-e5-small/e5_tokenizer.bin
 adb shell run-as "$PKG" ls -l files/models/multilingual-e5-small
 
-push_if_present qwen2.5-1.5b-instruct/qwen2.5-1.5b-instruct-q4_k_m.gguf
-adb shell run-as "$PKG" ls -l "files/models/qwen2.5-1.5b-instruct" 2>/dev/null || true
+push_if_present qwen2.5-0.5b-instruct/qwen2.5-0.5b-instruct-q4_k_m.gguf
+adb shell run-as "$PKG" ls -l "files/models/qwen2.5-0.5b-instruct" 2>/dev/null || true
 
 push_if_present whisper/ggml-small-q5_1.bin
 adb shell run-as "$PKG" ls -l "files/models/whisper" 2>/dev/null || true

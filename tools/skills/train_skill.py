@@ -38,13 +38,13 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 ROOT = Path(__file__).resolve().parents[2]
 KNOWLEDGE_REPORT = ROOT / "tools" / "knowledge" / "out" / "report-v2.json"
-BASE_MODEL_DIR = ROOT / "tools" / "models" / "qwen2.5-1.5b-instruct-hf"
+BASE_MODEL_DIR = ROOT / "tools" / "models" / "qwen2.5-0.5b-instruct-hf"
 OUT = ROOT / "tools" / "skills" / "out"
 CONVERT_SCRIPT = ROOT / "native" / "llama.cpp" / "convert_lora_to_gguf.py"
 
 # Must equal LlmArtifacts.MODEL_ID (android/core-llm) — the manifest records which base model
 # this adapter was trained against, and the phone refuses to load a mismatched pair.
-BASE_MODEL_ID = "Qwen2.5-1.5B-Instruct/Q4_K_M@91cad51"
+BASE_MODEL_ID = "Qwen2.5-0.5B-Instruct/Q4_K_M@9217f5d"
 
 SEED = 7
 MAX_EXAMPLES = 48

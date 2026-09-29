@@ -2,11 +2,20 @@
 
 Live dashboard. Updated after every step; history and reasoning are in [WORKLOG.md](WORKLOG.md).
 
-**Last updated:** 2026-09-29 · **Current:** M0 Foundations (9 / 10, only Qdrant Cloud remains), M1 Knowledge & search (5 / 5, complete), M2 Offline health assistant (3 / 8, plus 3 partial), M3 Households/OCR/daily work (5 / 6 complete — encryption deferred to M4) · **Test phones:** Xiaomi 2406ERN9CI, Android 16, 6 GB class (thermally throttled from heavy testing earlier — let it cool before trusting tok/s off it); Realme RMX2151, Android 12, 6 GB class (all M0/M1 native claims re-verified independently on this second device earlier this session)
+**Last updated:** 2026-09-29 · **Note:** per direct instruction, this project no longer tracks work against MILESTONES.md (being deleted) — below this line, entries describe what's built and what isn't in plain terms, not milestone numbers. Older entries above/below that still say "M0/M1/M2/M3" are historical record, not a live checklist to keep syncing. · **Test phones:** Xiaomi 2406ERN9CI, Android 16, 6 GB class; Realme RMX2151, Android 12, 6 GB class
 
 ---
 
-## Milestones
+## Latest (2026-09-29 night): persistence for Households, and a corrected UI direction
+
+- **Households/Members/Visits/DueItems now actually persist** (JSON file, app-private storage) — previously everything vanished on app restart, which was a bigger gap than any missing screen. Found and fixed a real race condition while verifying it (concurrent unsynchronized file writes could silently lose an update); confirmed fixed across four consecutive force-stop/relaunch cycles with exact expected counts each time. Full detail in WORKLOG.
+- **UI correction:** the glass-card/orb-background look was right all along — the actual complaint was that the *animated* version was heavy (a 24-second infinite-loop redraw on every screen, real CPU/battery cost). Reverted to the original translucent glass cards and orbs, but drawn once, statically, instead of animated. Also: removed Ask/Triage/Search from Home's tile grid (redundant with the bottom nav), replaced with a real "Recent activity" feed of logged visits, and removed the "Offline ready" pill per direct instruction. Kept the tighter corner radii and rounded-square icon badges from the earlier pass (not complained about).
+- **LLM swapped from Qwen2.5-1.5B to Qwen2.5-0.5B-Instruct.** Measured on-device (`--ez llm_check true`): **17.50 tok/s decode** (was 4.00-5.42 tok/s — a ~3.5x speedup), load time 3.6s (was 6-8.6s). Quality check: the same grounded test question ("How many antenatal check-ups...") still answered correctly and coherently. Old 1.5B GGUF kept on disk unused, not deleted.
+- **Per direct instruction, this project stops tracking against MILESTONES.md** (being deleted). Entries here describe features in plain terms, not milestone numbers.
+
+---
+
+## Milestones (historical — see note above; not maintained as a live checklist any more)
 
 | Milestone | Progress | State |
 |---|---|---|

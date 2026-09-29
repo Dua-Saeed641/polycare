@@ -1,17 +1,22 @@
 package org.polycare.app.households
 
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 import org.polycare.app.ai.EmbedderProvider
 import org.polycare.common.EventLog
 import org.polycare.common.EventLog.Category
 import org.polycare.common.Hlc
 import org.polycare.common.HlcClock
 import org.polycare.common.UuidV7
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -103,11 +108,19 @@ data class VisitSearchResult(
 )
 
 /**
- * Household and daily work repository (M3: "Household and member records with consent capture",
- * "Due list and visit planner", "Visit notes searchable by meaning", "Monthly report and incentive tracker").
+ * Household and daily work repository ("Household and member records with consent capture",
+ * "Due list and visit planner", "Visit notes searchable by meaning", "Monthly report and
+ * incentive tracker").
  *
- * Invariant 1: In-memory MVP — M4 moves this behind the op-log.
- * Invariant 7: Personal health records never leave the phone. Nothing here is ever placed in an outbox.
+ * Persisted as a plain JSON file in app-private storage (`files/households_store.json`) — not
+ * the op-log architecture invariant 1 describes for `households` (that needs the op-log itself,
+ * which doesn't exist yet), but real persistence, not nothing: an ASHA worker's registered
+ * households surviving an app restart is a correctness requirement on its own, independent of
+ * which storage mechanism eventually backs it. When the op-log lands, this file format goes
+ * away in favour of replaying ops; until then, losing every household on a restart would be a
+ * much bigger problem than which storage engine wrote the file.
+ * Invariant 7: personal health records never leave the phone. Nothing here is ever placed in an
+ * outbox — this file is never touched by anything sync-related.
  */
 @Singleton
 class HouseholdsRepository internal constructor(
@@ -115,6 +128,7 @@ class HouseholdsRepository internal constructor(
     private val idGen: UuidV7,
     private val events: EventLog,
     private val embedders: EmbedderProvider?,
+    private val context: Context?,
     @Suppress("UNUSED_PARAMETER") forTestingOnly: Boolean,
 ) {
     @Inject
@@ -123,15 +137,26 @@ class HouseholdsRepository internal constructor(
         idGen: UuidV7,
         events: EventLog,
         embedders: EmbedderProvider,
-    ) : this(clock, idGen, events, embedders, false)
+        @ApplicationContext context: Context,
+    ) : this(clock, idGen, events, embedders, context, false)
 
+    /** Test-only: no context means no persistence, so tests stay fast and hermetic. */
     constructor(
         clock: HlcClock,
         idGen: UuidV7,
         events: EventLog,
-    ) : this(clock, idGen, events, null, true)
+    ) : this(clock, idGen, events, null, null, true)
 
     private val scope = CoroutineScope(Dispatchers.Default)
+
+    // Every persist() call snapshots current state synchronously, then writes asynchronously —
+    // but multiple persist() calls in quick succession (e.g. addHousehold then addMember, as the
+    // debug hook does) would otherwise launch concurrent writes to the same file on Default's
+    // thread pool with no ordering guarantee: an *earlier* snapshot's write finishing *after* a
+    // later one silently loses the later update. limitedParallelism(1) makes writes strictly
+    // sequential, in call order, so the last call to persist() always wins on disk.
+    private val writeDispatcher = Dispatchers.IO.limitedParallelism(1)
+    private val storeFile: File? = context?.let { File(it.filesDir, "households_store.json") }
 
     private val _households = MutableStateFlow<List<Household>>(emptyList())
     val households: StateFlow<List<Household>> = _households.asStateFlow()
@@ -146,7 +171,7 @@ class HouseholdsRepository internal constructor(
     val dueItems: StateFlow<List<DueItem>> = _dueItems.asStateFlow()
 
     init {
-        seedInitialDataIfEmpty()
+        if (!loadFromDisk()) seedInitialDataIfEmpty()
     }
 
     private fun seedInitialDataIfEmpty() {
@@ -212,12 +237,14 @@ class HouseholdsRepository internal constructor(
                 reason = "Post-delivery birth spacing counselling",
             ),
         )
+        persist()
     }
 
     fun addHousehold(headOfHousehold: String, village: String, consentGiven: Boolean): Household {
         val household = Household(idGen.next().toString(), headOfHousehold, village, consentGiven, clock.now())
         _households.value = listOf(household) + _households.value
         events.record(Category.HOUSEHOLDS, "Household added", mapOf("consentGiven" to consentGiven))
+        persist()
         return household
     }
 
@@ -231,13 +258,14 @@ class HouseholdsRepository internal constructor(
         val member = Member(idGen.next().toString(), householdId, name, age, relation, clock.now())
         _members.value = listOf(member) + _members.value
         events.record(Category.HOUSEHOLDS, "Member added", mapOf("relation" to relation))
+        persist()
         return member
     }
 
     fun membersOf(householdId: String): List<Member> = _members.value.filter { it.householdId == householdId }
 
     /**
-     * Records an ASHA home visit (M3: "Due list and visit planner").
+     * Records an ASHA home visit ("Due list and visit planner").
      * Enforces consent gate: personal health data cannot be recorded without consent.
      */
     fun recordVisit(
@@ -257,7 +285,7 @@ class HouseholdsRepository internal constructor(
             return null
         }
 
-        var visit = Visit(
+        val visit = Visit(
             id = idGen.next().toString(),
             householdId = householdId,
             memberId = memberId,
@@ -283,6 +311,7 @@ class HouseholdsRepository internal constructor(
             "Visit recorded",
             mapOf("type" to type.name, "highRisk" to highRisk, "incentive" to incentiveRupees),
         )
+        persist()
 
         // Asynchronously embed note text for on-device semantic search
         embedders?.let { provider ->
@@ -294,6 +323,7 @@ class HouseholdsRepository internal constructor(
                         _visits.value = _visits.value.map { v ->
                             if (v.id == visit.id) v.copy(embedding = vec) else v
                         }
+                        persist()
                     }
                 }
             }
@@ -303,7 +333,7 @@ class HouseholdsRepository internal constructor(
     }
 
     /**
-     * Searches recorded visits by semantic meaning (M3: "Visit notes searchable by meaning").
+     * Searches recorded visits by semantic meaning ("Visit notes searchable by meaning").
      * Uses vector similarity if the embedder is ready, with fallback to term matching.
      */
     suspend fun searchVisits(query: String): List<VisitSearchResult> {
@@ -355,7 +385,7 @@ class HouseholdsRepository internal constructor(
 
     /**
      * Computes monthly report and incentive tracker summary from recorded visits
-     * (M3: "Monthly report and incentive tracker filled from visits").
+     * ("Monthly report and incentive tracker filled from visits").
      */
     fun monthlyReport(): MonthlyIncentiveReport {
         val allVisits = _visits.value
@@ -390,4 +420,102 @@ class HouseholdsRepository internal constructor(
         val denom = Math.sqrt(normA.toDouble()) * Math.sqrt(normB.toDouble())
         return if (denom == 0.0) 0f else (dot / denom).toFloat()
     }
+
+    // --- Persistence: plain JSON, app-private storage, never synced. See class doc comment. ---
+
+    private fun persist() {
+        val file = storeFile ?: return
+        val snapshot = JSONObject().apply {
+            put("households", JSONArray(_households.value.map { it.toJson() }))
+            put("members", JSONArray(_members.value.map { it.toJson() }))
+            put("visits", JSONArray(_visits.value.map { it.toJson() }))
+            put("dueItems", JSONArray(_dueItems.value.map { it.toJson() }))
+        }
+        scope.launch(writeDispatcher) {
+            runCatching { file.writeText(snapshot.toString()) }
+                .onFailure { events.record(Category.HOUSEHOLDS, "Failed to persist households store", mapOf("error" to it.javaClass.simpleName), EventLog.Level.ERROR) }
+        }
+    }
+
+    /** Returns true if a persisted store was found and loaded (skips demo-data seeding). */
+    private fun loadFromDisk(): Boolean {
+        val file = storeFile ?: return false
+        if (!file.exists()) return false
+        return runCatching {
+            val root = JSONObject(file.readText())
+            _households.value = root.getJSONArray("households").toObjectList(::householdFromJson)
+            _members.value = root.getJSONArray("members").toObjectList(::memberFromJson)
+            _visits.value = root.getJSONArray("visits").toObjectList(::visitFromJson)
+            _dueItems.value = root.getJSONArray("dueItems").toObjectList(::dueItemFromJson)
+            true
+        }.getOrElse {
+            events.record(Category.HOUSEHOLDS, "Failed to load persisted households store", mapOf("error" to it.javaClass.simpleName), EventLog.Level.ERROR)
+            false
+        }
+    }
+
+    private fun Hlc.toJson() = JSONObject().put("wallMs", wallMs).put("logical", logical).put("node", node)
+    private fun hlcFromJson(o: JSONObject) = Hlc(o.getLong("wallMs"), o.getInt("logical"), o.getString("node"))
+
+    private fun Household.toJson() = JSONObject()
+        .put("id", id).put("headOfHousehold", headOfHousehold).put("village", village)
+        .put("consentGiven", consentGiven).put("hlc", hlc.toJson())
+
+    private fun householdFromJson(o: JSONObject) = Household(
+        o.getString("id"), o.getString("headOfHousehold"), o.getString("village"),
+        o.getBoolean("consentGiven"), hlcFromJson(o.getJSONObject("hlc")),
+    )
+
+    private fun Member.toJson() = JSONObject()
+        .put("id", id).put("householdId", householdId).put("name", name)
+        .put("age", age).put("relation", relation).put("hlc", hlc.toJson())
+
+    private fun memberFromJson(o: JSONObject) = Member(
+        o.getString("id"), o.getString("householdId"), o.getString("name"),
+        o.getInt("age"), o.getString("relation"), hlcFromJson(o.getJSONObject("hlc")),
+    )
+
+    private fun Visit.toJson() = JSONObject()
+        .put("id", id).put("householdId", householdId)
+        .put("memberId", memberId).put("memberName", memberName)
+        .put("type", type.name).put("notes", notes).put("date", date)
+        .put("highRisk", highRisk).put("incentiveRupees", incentiveRupees)
+        .put("hlc", hlc.toJson())
+        .apply { if (embedding != null) put("embedding", JSONArray(embedding.map { it.toDouble() })) }
+
+    private fun visitFromJson(o: JSONObject) = Visit(
+        id = o.getString("id"),
+        householdId = o.getString("householdId"),
+        memberId = o.optString("memberId").ifBlank { null },
+        memberName = o.optString("memberName").ifBlank { null },
+        type = VisitType.valueOf(o.getString("type")),
+        notes = o.getString("notes"),
+        date = o.getString("date"),
+        highRisk = o.getBoolean("highRisk"),
+        incentiveRupees = o.getInt("incentiveRupees"),
+        hlc = hlcFromJson(o.getJSONObject("hlc")),
+        embedding = o.optJSONArray("embedding")?.let { arr -> FloatArray(arr.length()) { i -> arr.getDouble(i).toFloat() } },
+    )
+
+    private fun DueItem.toJson() = JSONObject()
+        .put("id", id).put("householdId", householdId).put("householdHead", householdHead)
+        .put("memberId", memberId).put("memberName", memberName).put("village", village)
+        .put("visitType", visitType.name).put("dueDate", dueDate).put("priority", priority.name)
+        .put("reason", reason).put("completed", completed)
+
+    private fun dueItemFromJson(o: JSONObject) = DueItem(
+        id = o.getString("id"),
+        householdId = o.getString("householdId"),
+        householdHead = o.getString("householdHead"),
+        memberId = o.optString("memberId").ifBlank { null },
+        memberName = o.getString("memberName"),
+        village = o.getString("village"),
+        visitType = VisitType.valueOf(o.getString("visitType")),
+        dueDate = o.getString("dueDate"),
+        priority = DuePriority.valueOf(o.getString("priority")),
+        reason = o.getString("reason"),
+        completed = o.getBoolean("completed"),
+    )
+
+    private fun <T> JSONArray.toObjectList(from: (JSONObject) -> T): List<T> = List(length()) { i -> from(getJSONObject(i)) }
 }

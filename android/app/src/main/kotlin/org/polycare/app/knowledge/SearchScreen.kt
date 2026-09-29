@@ -132,7 +132,8 @@ fun SearchScreen(
                 if (state.result.hits.isEmpty()) {
                     item { Text("No matching guidance.", style = MaterialTheme.typography.bodyMedium, color = Brand.InkMuted) }
                 }
-                items(state.result.hits, key = { it.id }) { hit -> HitCard(hit) }
+                val topScore = state.result.hits.maxOfOrNull { it.score } ?: 1f
+                items(state.result.hits, key = { it.id }) { hit -> HitCard(hit, topScore) }
                 item {
                     Text(
                         "From official NHM training material. PolyCare supports decisions; it does not diagnose. When unsure, refer to the ANM or PHC.",
@@ -152,7 +153,7 @@ private fun SearchField(value: String, onChange: (String) -> Unit, onSubmit: () 
         Modifier
             .fillMaxWidth()
             .clip(CircleShape)
-            .background(Brand.White)
+            .background(Brand.Glass)
             .border(1.dp, Brand.Line, CircleShape)
             .padding(horizontal = 18.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -202,12 +203,19 @@ private fun KnowledgeStatusLine(state: KnowledgeRepository.State, ui: SearchUi) 
 }
 
 @Composable
-private fun HitCard(hit: KnowledgeHit) {
+private fun HitCard(hit: KnowledgeHit, topScore: Float) {
     var expanded by remember { mutableStateOf(false) }
+    // hit.score is a raw RRF-fused value (typically ~0.01-0.03), not a 0-1 similarity — showing
+    // it directly as a percentage would make the *best* result look like the worst match. Shown
+    // relative to this result set's own top score instead: a meaningful ranking signal, not a
+    // fabricated absolute confidence number.
+    val relativeMatch = if (topScore > 0f) (hit.score / topScore * 100).toInt().coerceIn(0, 100) else 100
     GlassCard(Modifier.fillMaxWidth().animateContentSize().clip(MaterialTheme.shapes.large).clickable { expanded = !expanded }, padding = 18.dp) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Tag(shortSource(hit.sourceId) + " · p${hit.page}", Brand.Blush, Brand.Plum)
             Tag(if (hit.lang == "hi") "हिंदी" else "EN", Brand.PinkMist, Brand.InkMuted)
+            Spacer(Modifier.weight(1f))
+            Text("$relativeMatch% match", style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted)
         }
         if (hit.quality == "table-ambiguous") {
             Spacer(Modifier.height(10.dp))
@@ -222,13 +230,18 @@ private fun HitCard(hit: KnowledgeHit) {
             }
         }
         Spacer(Modifier.height(10.dp))
+        var overflowed by remember(hit.id) { mutableStateOf(false) }
         Text(
             hit.text,
             style = MaterialTheme.typography.bodyMedium,
             color = Brand.Ink,
             maxLines = if (expanded) Int.MAX_VALUE else 6,
             overflow = TextOverflow.Ellipsis,
+            onTextLayout = { if (!expanded) overflowed = it.hasVisualOverflow },
         )
+        if (overflowed && !expanded) {
+            Text("Tap to read the full passage", style = MaterialTheme.typography.labelSmall, color = Brand.Plum)
+        }
         Spacer(Modifier.height(10.dp))
         Text(
             hit.title,

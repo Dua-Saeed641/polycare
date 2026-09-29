@@ -52,12 +52,14 @@ import org.polycare.app.ui.components.GlassCard
 import org.polycare.app.ui.components.MetricRow
 import org.polycare.app.ui.components.SectionLabel
 import org.polycare.app.ui.theme.Brand
+import org.polycare.llm.LlmArtifacts
 
 @Composable
 fun AskScreen(
     contentPadding: PaddingValues,
     onBack: () -> Unit,
     initialQuery: String? = null,
+    autoStartVoice: Boolean = false,
     viewModel: AskViewModel = hiltViewModel(),
 ) {
     val question by viewModel.question.collectAsStateWithLifecycle()
@@ -67,7 +69,14 @@ fun AskScreen(
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) viewModel.startRecording()
     }
-    LaunchedEffect(Unit) { if (initialQuery != null) viewModel.ask(initialQuery) }
+    LaunchedEffect(Unit) {
+        if (initialQuery != null) viewModel.ask(initialQuery)
+        // Home's mic button navigates here with this set, so tapping it starts listening
+        // immediately instead of landing on a blank Ask screen the user has to tap again.
+        if (autoStartVoice) {
+            if (VoiceRecorder.hasPermission(context)) viewModel.startRecording() else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
 
     Column(
         Modifier
@@ -190,7 +199,7 @@ private fun AnswerCard(state: AskUi.Answered) {
                 }
             } else if (state.tokensPerSecond != null) {
                 Spacer(Modifier.height(4.dp))
-                val model = if (state.skill != null) "Qwen2.5-1.5B + ${state.skill}" else "Qwen2.5-1.5B on-device"
+                val model = if (state.skill != null) "${LlmArtifacts.shortName} + ${state.skill}" else "${LlmArtifacts.shortName} on-device"
                 Text(
                     "$model · %.1f tok/s".format(state.tokensPerSecond),
                     style = MaterialTheme.typography.labelSmall,
@@ -200,7 +209,7 @@ private fun AnswerCard(state: AskUi.Answered) {
             Spacer(Modifier.height(10.dp))
             Text("Source passage", style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted)
             Spacer(Modifier.height(4.dp))
-            Text(state.hit.text, style = MaterialTheme.typography.bodySmall, color = Brand.InkMuted, maxLines = 4)
+            Text(state.hit.text, style = MaterialTheme.typography.bodySmall, color = Brand.InkMuted)
         } else if (state.generating) {
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {

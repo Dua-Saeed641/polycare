@@ -1,18 +1,11 @@
 package org.polycare.app.ui.components
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -25,23 +18,29 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import org.polycare.app.ui.theme.Brand
-import kotlin.math.cos
-import kotlin.math.sin
 import kotlin.random.Random
 
 /** An orb as in the banner: orchid core, pink body, red rim, fading out. Positions are fractions. */
-private data class Orb(val x: Float, val y: Float, val radius: Float, val drift: Float, val phase: Float)
+private data class Orb(val x: Float, val y: Float, val radius: Float)
 
 private val HeroOrbs = listOf(
-    Orb(x = 0.05f, y = 0.10f, radius = 0.55f, drift = 0.020f, phase = 0.0f),
-    Orb(x = 0.92f, y = 0.02f, radius = 0.42f, drift = 0.025f, phase = 1.7f),
-    Orb(x = 0.80f, y = 0.42f, radius = 0.50f, drift = 0.018f, phase = 3.1f),
-    Orb(x = 0.28f, y = 0.55f, radius = 0.22f, drift = 0.030f, phase = 4.4f),
+    Orb(x = 0.05f, y = 0.10f, radius = 0.55f),
+    Orb(x = 0.92f, y = 0.02f, radius = 0.42f),
+    Orb(x = 0.80f, y = 0.42f, radius = 0.50f),
+    Orb(x = 0.28f, y = 0.55f, radius = 0.22f),
 )
 
 /**
- * The banner backdrop: paper background, drifting blurred orbs and film grain.
- * [intensity] lowers the orbs on dense screens so text stays readable.
+ * The banner backdrop: paper background, soft orbs and film grain — brought back after a first
+ * attempt removed it entirely over an "AI-generated" complaint that turned out to be about
+ * something else (glass/circle/radius overuse, fixed separately) rather than the orbs
+ * themselves, which the user confirmed they liked. What actually needed fixing was cost, not
+ * looks: the previous version ran `rememberInfiniteTransition` — a 24-second, indefinitely
+ * looping animation recomposing and redrawing this Canvas on *every screen, every frame*, for as
+ * long as the app is open. That's real, continuous CPU/battery cost for a purely decorative
+ * effect, working against this project's own "budget phone, all day in the field" premise. Drawn
+ * once now, statically, at the same visual position an animation frame would show — same look,
+ * effectively zero ongoing cost. [intensity] still lowers the orbs on dense screens.
  */
 @Composable
 fun BrandBackground(
@@ -50,15 +49,9 @@ fun BrandBackground(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val grain = rememberGrain()
-    val t by rememberInfiniteTransition(label = "orbs").animateFloat(
-        initialValue = 0f,
-        targetValue = (2 * Math.PI).toFloat(),
-        animationSpec = infiniteRepeatable(tween(durationMillis = 24_000, easing = LinearEasing), RepeatMode.Restart),
-        label = "orbPhase",
-    )
     Box(modifier.fillMaxSize().background(Brand.Paper)) {
         Canvas(Modifier.fillMaxSize()) {
-            HeroOrbs.forEach { drawOrb(it, t, intensity) }
+            HeroOrbs.forEach { drawOrb(it, intensity) }
             // Veil so content below the hero sits on calm paper.
             drawRect(
                 Brush.verticalGradient(
@@ -74,13 +67,10 @@ fun BrandBackground(
     }
 }
 
-private fun DrawScope.drawOrb(orb: Orb, t: Float, intensity: Float) {
+private fun DrawScope.drawOrb(orb: Orb, intensity: Float) {
     val w = size.width
     val r = orb.radius * w
-    val center = Offset(
-        x = (orb.x + orb.drift * cos(t + orb.phase)) * w,
-        y = (orb.y + orb.drift * sin(t + orb.phase)) * w,
-    )
+    val center = Offset(x = orb.x * w, y = orb.y * w)
     drawCircle(
         brush = Brush.radialGradient(
             0.00f to Brand.Orchid.copy(alpha = 0.95f * intensity),

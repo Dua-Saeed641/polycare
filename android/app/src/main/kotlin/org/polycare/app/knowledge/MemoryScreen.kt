@@ -174,7 +174,7 @@ private fun LangChip(text: String, selected: Boolean, onClick: () -> Unit) {
         color = if (selected) Brand.Paper else Brand.InkMuted,
         modifier = Modifier
             .clip(CircleShape)
-            .background(if (selected) Brand.Plum else Brand.White)
+            .background(if (selected) Brand.Plum else Brand.Glass)
             .border(1.dp, if (selected) Brand.Plum else Brand.Line, CircleShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 7.dp),

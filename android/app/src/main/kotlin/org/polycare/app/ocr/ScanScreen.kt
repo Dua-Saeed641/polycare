@@ -138,7 +138,7 @@ fun ScanScreen(
 private fun ActionButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier, onClick: () -> Unit) {
     GlassCard(modifier.clickable(onClick = onClick), padding = 18.dp) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-            Box(Modifier.size(40.dp).background(Brand.PinkMist, CircleShape), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(40.dp).background(Brand.PinkMist, MaterialTheme.shapes.small), contentAlignment = Alignment.Center) {
                 Icon(icon, contentDescription = null, tint = Brand.Plum, modifier = Modifier.size(20.dp))
             }
             Spacer(Modifier.height(10.dp))

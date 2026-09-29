@@ -55,10 +55,12 @@ fun Wordmark(modifier: Modifier = Modifier, logoSize: Dp = 28.dp) {
 }
 
 /**
- * Frosted white card that lets the orbs glow through at the edges. [accent] tints the shadow and
- * left edge — a cheap, consistent way to give each screen's cards a signature colour drawn from
- * the brand palette (Ask=Plum, Triage=Rose, Search=Magenta, …) instead of every card in the app
- * looking identical. Left `null` for the neutral default.
+ * Frosted card that lets the orbs glow through at the edges — brought back after a first attempt
+ * replaced it with a solid opaque card over an "AI-generated" complaint that turned out to be
+ * about something else (see `BrandBackground`'s doc comment). [accent] tints the glow shadow and
+ * left edge — a cheap, consistent way to give each screen's cards a signature colour from the
+ * brand palette (Ask=Plum, Triage=Rose, Search=Magenta, …) instead of every card looking
+ * identical. Left `null` for the neutral default.
  */
 @Composable
 fun GlassCard(
@@ -70,18 +72,22 @@ fun GlassCard(
 ) {
     Surface(
         modifier = modifier.shadow(
-            elevation = 14.dp,
+            elevation = 10.dp,
             shape = shape,
-            ambientColor = (accent ?: Brand.Plum).copy(alpha = 0.16f),
-            spotColor = (accent ?: Brand.Plum).copy(alpha = 0.20f),
+            ambientColor = (accent ?: Brand.Plum).copy(alpha = 0.14f),
+            spotColor = (accent ?: Brand.Plum).copy(alpha = 0.18f),
         ),
         shape = shape,
         color = Brand.Glass,
         border = BorderStroke(1.dp, Brand.White),
         shadowElevation = 0.dp,
     ) {
-        Row(Modifier.height(IntrinsicSize.Min)) {
-            if (accent != null) Box(Modifier.width(3.dp).fillMaxHeight().background(accent))
+        if (accent != null) {
+            Row(Modifier.height(IntrinsicSize.Min)) {
+                Box(Modifier.width(3.dp).fillMaxHeight().background(accent))
+                Column(Modifier.padding(padding), content = content)
+            }
+        } else {
             Column(Modifier.padding(padding), content = content)
         }
     }

@@ -25,9 +25,7 @@ import androidx.compose.material.icons.outlined.DocumentScanner
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.MonitorHeart
 import androidx.compose.material.icons.outlined.Psychology
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -45,12 +43,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.polycare.app.ai.EmbedderProvider
 import org.polycare.app.device.DeviceCheckViewModel
+import org.polycare.app.households.Visit
 import org.polycare.app.knowledge.KnowledgeRepository
 import org.polycare.app.ui.components.GlassCard
 import org.polycare.app.ui.components.Hairline
 import org.polycare.app.ui.components.MetricRow
 import org.polycare.app.ui.components.SectionLabel
-import org.polycare.app.ui.components.StatusPill
 import org.polycare.app.ui.components.Wordmark
 import org.polycare.app.ui.theme.Brand
 
@@ -63,12 +61,9 @@ private data class Feature(
     val route: String? = null,
 )
 
-/** Each tool gets its own accent from the brand palette instead of one repeated chip colour —
- * the grid should read as eight distinct tools at a glance, not eight copies of one tile. */
+/** Only tools that aren't already one tap away in the bottom nav (Home/Ask/Triage/Search) —
+ * showing those again here would be a third copy of the same navigation, not a useful shortcut. */
 private val Features = listOf(
-    Feature("Ask", "Text answers, offline", Icons.Outlined.Mic, "M2", Brand.Plum, route = "ask"),
-    Feature("Triage", "Danger signs & referral", Icons.Outlined.MonitorHeart, "M2", Brand.Rose, route = "triage"),
-    Feature("Search", "Hybrid search, offline", Icons.Outlined.Search, "M1", Brand.Magenta, route = "search"),
     Feature("Memory", "What this phone knows", Icons.Outlined.Psychology, "M1", Brand.PlumDeep, route = "memory"),
     Feature("Scan", "MCP cards & reports", Icons.Outlined.DocumentScanner, "M3", Brand.Positive, route = "scan"),
     Feature("Households", "Families & visits", Icons.Outlined.Groups, "M3", Brand.Pink, route = "households"),
@@ -79,7 +74,7 @@ private val Features = listOf(
 @Composable
 fun HomeScreen(
     contentPadding: PaddingValues,
-    onAsk: () -> Unit,
+    onAsk: (voice: Boolean) -> Unit,
     onNavigate: (route: String) -> Unit,
     onNotReady: (feature: String, milestone: String) -> Unit,
     onMenu: () -> Unit,
@@ -89,6 +84,7 @@ fun HomeScreen(
     val device by viewModel.state.collectAsStateWithLifecycle()
     val knowledge by status.knowledge.collectAsStateWithLifecycle()
     val embedder by status.embedder.collectAsStateWithLifecycle()
+    val recentVisits by status.recentVisits.collectAsStateWithLifecycle()
 
     Column(
         Modifier
@@ -97,25 +93,18 @@ fun HomeScreen(
             .padding(contentPadding)
             .padding(horizontal = 20.dp),
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(top = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(36.dp).clip(CircleShape).background(Brand.Glass).clickable(onClick = onMenu),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Outlined.Menu, contentDescription = "Menu", tint = Brand.Ink, modifier = Modifier.size(18.dp))
-                }
-                Spacer(Modifier.width(12.dp))
-                Wordmark(logoSize = 26.dp)
+        Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(36.dp).clip(CircleShape).background(Brand.Glass).clickable(onClick = onMenu),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Outlined.Menu, contentDescription = "Menu", tint = Brand.Ink, modifier = Modifier.size(18.dp))
             }
-            StatusPill("Offline ready", dot = Brand.Positive)
+            Spacer(Modifier.width(12.dp))
+            Wordmark(logoSize = 26.dp)
         }
 
-        Spacer(Modifier.height(56.dp))
+        Spacer(Modifier.height(28.dp))
         SectionLabel("Namaste", color = Brand.Plum)
         Spacer(Modifier.height(10.dp))
         Text(
@@ -125,7 +114,7 @@ fun HomeScreen(
         )
 
         Spacer(Modifier.height(28.dp))
-        AskBar(onClick = onAsk)
+        AskBar(onClick = { onAsk(false) }, onMicClick = { onAsk(true) })
 
         Spacer(Modifier.height(36.dp))
         SectionLabel("Tools")
@@ -139,6 +128,24 @@ fun HomeScreen(
                 }
             }
             Spacer(Modifier.height(12.dp))
+        }
+
+        Spacer(Modifier.height(24.dp))
+        SectionLabel("Recent activity")
+        Spacer(Modifier.height(12.dp))
+        if (recentVisits.isEmpty()) {
+            GlassCard(Modifier.fillMaxWidth()) {
+                Text("No visits recorded yet.", style = MaterialTheme.typography.bodyMedium, color = Brand.InkMuted)
+                Spacer(Modifier.height(2.dp))
+                Text("Visits you log from Households or Due list will show up here.", style = MaterialTheme.typography.bodySmall, color = Brand.InkMuted)
+            }
+        } else {
+            GlassCard(Modifier.fillMaxWidth(), padding = 4.dp) {
+                recentVisits.take(5).forEachIndexed { i, visit ->
+                    if (i > 0) Hairline()
+                    ActivityRow(visit)
+                }
+            }
         }
 
         Spacer(Modifier.height(24.dp))
@@ -175,7 +182,7 @@ fun HomeScreen(
 }
 
 @Composable
-private fun AskBar(onClick: () -> Unit) {
+private fun AskBar(onClick: () -> Unit, onMicClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -198,6 +205,9 @@ private fun AskBar(onClick: () -> Unit) {
             Modifier
                 .size(48.dp)
                 .clip(CircleShape)
+                // Own clickable, not just riding the bar's — a tap here starts voice input
+                // directly instead of only opening Ask to be typed into.
+                .clickable(onClick = onMicClick)
                 .background(Brush.radialGradient(listOf(Brand.Magenta, Brand.Plum, Brand.PlumDeep))),
             contentAlignment = Alignment.Center,
         ) {
@@ -211,10 +221,10 @@ private fun FeatureTile(feature: Feature, modifier: Modifier, onClick: () -> Uni
     GlassCard(modifier.clip(MaterialTheme.shapes.large).clickable(onClick = onClick), padding = 18.dp, accent = feature.accent) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
             Box(
-                Modifier.size(40.dp).clip(CircleShape).background(feature.accent.copy(alpha = 0.14f)),
+                Modifier.size(40.dp).clip(MaterialTheme.shapes.small).background(Brand.PinkMist),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(feature.icon, contentDescription = null, tint = feature.accent, modifier = Modifier.size(20.dp))
+                Icon(feature.icon, contentDescription = null, tint = Brand.Plum, modifier = Modifier.size(20.dp))
             }
             Icon(
                 Icons.AutoMirrored.Outlined.ArrowForward,
@@ -227,5 +237,27 @@ private fun FeatureTile(feature: Feature, modifier: Modifier, onClick: () -> Uni
         Text(feature.title, style = MaterialTheme.typography.titleLarge, color = Brand.Ink)
         Spacer(Modifier.height(2.dp))
         Text(feature.caption, style = MaterialTheme.typography.bodySmall, color = Brand.InkMuted)
+    }
+}
+
+@Composable
+private fun ActivityRow(visit: Visit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(visit.type.label, style = MaterialTheme.typography.titleSmall, color = Brand.Ink)
+            visit.memberName?.let {
+                Spacer(Modifier.height(2.dp))
+                Text(it, style = MaterialTheme.typography.bodySmall, color = Brand.InkMuted)
+            }
+        }
+        if (visit.highRisk) {
+            Box(Modifier.size(7.dp).clip(CircleShape).background(Brand.Rose))
+            Spacer(Modifier.width(8.dp))
+        }
+        Text(visit.date, style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted)
     }
 }
