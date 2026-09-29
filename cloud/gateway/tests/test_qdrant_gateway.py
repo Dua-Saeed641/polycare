@@ -41,6 +41,15 @@ class QdrantGatewayTests(unittest.TestCase):
         self.assertEqual(auth.status_code, 200, auth.text)
         self.headers = {"Authorization": "Bearer " + auth.json()["access_token"]}
 
+        class StubEmbedder:
+            def embed(self, texts):
+                return iter([[1.0] + [0.0] * 383 for _ in texts])
+
+            def query_embed(self, texts):
+                return iter([[1.0] + [0.0] * 383 for _ in texts])
+
+        main.app.state.embedder = StubEmbedder()
+
     def tearDown(self):
         self.client_context.__exit__(None, None, None)
         self.qdrant_patch.stop()
@@ -89,6 +98,15 @@ class QdrantGatewayTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(base64.b64decode(main._point(self.db, "devices", self.device_id, "device")["chain_head"]),
             base64.b64decode(self.client.post("/v1/ops/push", headers=self.headers, json={"ops": [op]}).json()["chain_head"]))
+
+    def test_fastembed_knowledge_ingest_and_search_use_separate_qdrant_collection(self):
+        ingested = self.client.post("/v1/knowledge/anc", headers={"Authorization": "Bearer " + "k" * 48}, json={
+            "document_id": "anc", "language": "en", "text": "Four antenatal checkups during pregnancy.", "source_version": "2026-09"})
+        self.assertEqual(ingested.status_code, 200, ingested.text)
+        searched = self.client.get("/v1/knowledge/search?query=antenatal%20checkups", headers=self.headers)
+        self.assertEqual(searched.status_code, 200, searched.text)
+        self.assertEqual(searched.json()["results"][0]["document_id"], "anc")
+        self.assertEqual(self.db.count("knowledge").count, 1)
 
 
 if __name__ == "__main__":

@@ -197,6 +197,7 @@ async def lifespan(application: FastAPI):
     _collection(client, "knowledge", 384)
     application.state.qdrant = client
     application.state.write_lock = threading.RLock()
+    application.state.embedder_lock = threading.Lock()
     application.state.embedder = None
     yield
     client.close()
@@ -241,6 +242,15 @@ def create_challenge(request: ChallengeRequest, client: Annotated[QdrantClient, 
         raise HTTPException(404, "Device is not registered")
     challenge_id, nonce = uuid.uuid4(), secrets.token_bytes(32)
     expires = datetime.now(UTC) + timedelta(minutes=2)
+    stale_ids: list[str | int] = []
+    offset = None
+    while True:
+        points, offset = client.scroll("auth_challenges", limit=256, offset=offset, with_payload=True, with_vectors=False)
+        stale_ids.extend(str(point.id) for point in points if point.payload.get("consumed") or datetime.fromisoformat(point.payload["expires_at"]) <= datetime.now(UTC))
+        if offset is None:
+            break
+    if stale_ids:
+        client.delete("auth_challenges", points_selector=models.PointIdsList(points=stale_ids), wait=True)
     client.upsert("auth_challenges", [models.PointStruct(id=str(challenge_id), vector={}, payload={
         "device_id": request.device_id, "nonce": base64.b64encode(nonce).decode(), "expires_at": expires.isoformat(), "consumed": False})], wait=True)
     return {"challenge_id": str(challenge_id), "nonce": base64.b64encode(nonce).decode(), "expires_at": expires.isoformat()}
@@ -356,6 +366,16 @@ class KnowledgeDocument(StrictModel):
     source_version: str = Field(min_length=1, max_length=128)
 
 
+def _embedder() -> Any:
+    if app.state.embedder is None:
+        with app.state.embedder_lock:
+            if app.state.embedder is None:
+                from fastembed import TextEmbedding
+
+                app.state.embedder = TextEmbedding(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+    return app.state.embedder
+
+
 @app.post("/v1/knowledge/{document_id}")
 def upsert_knowledge(document_id: str, request: KnowledgeDocument,
                      client: Annotated[QdrantClient, Depends(_qdrant)],
@@ -366,11 +386,7 @@ def upsert_knowledge(document_id: str, request: KnowledgeDocument,
     if request.document_id != document_id or _scan_private({"text": request.text}):
         raise HTTPException(422, "Document id mismatch or text contains a personal identifier")
     model_name = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-    if app.state.embedder is None:
-        from fastembed import TextEmbedding
-
-        app.state.embedder = TextEmbedding(model_name=model_name)
-    embedder = app.state.embedder
+    embedder = _embedder()
     vector = next(embedder.embed([request.text]))
     point_id = _pid("knowledge", document_id)
     client.upsert("knowledge", [models.PointStruct(id=point_id, vector={"stub": list(map(float, vector))}, payload={
@@ -387,12 +403,8 @@ def search_knowledge(query: str = Query(min_length=2, max_length=2000),
     del device_id
     if _scan_private({"text": query}):
         raise HTTPException(403, "Query contains a possible personal identifier")
-    if app.state.embedder is None:
-        from fastembed import TextEmbedding
-
-        app.state.embedder = TextEmbedding(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
-    vector = next(app.state.embedder.query_embed([query]))
-    hits = client.query_points("knowledge", query={"stub": list(map(float, vector))}, limit=8, with_payload=True).points
+    vector = next(_embedder().query_embed([query]))
+    hits = client.query_points("knowledge", query=list(map(float, vector)), using="stub", limit=8, with_payload=True).points
     return {"results": [{"document_id": hit.payload["document_id"], "language": hit.payload["language"],
         "text": hit.payload["text"], "source_version": hit.payload["source_version"], "score": hit.score}
         for hit in hits], "embedding_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"}

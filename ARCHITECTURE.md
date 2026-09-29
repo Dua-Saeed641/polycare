@@ -57,8 +57,7 @@
 | Vector DB | **Qdrant Cloud** (managed Qdrant Server) | `fleet_memory`, `knowledge_atlas`, `skill_registry`, `draft_corpus`, `knowledge_gaps`, `signals`, `radar_regions`, `atlas` |
 | Edge Gateway | FastAPI, Python 3.12, Uvicorn, Pydantic v2, `qdrant-client` | Device auth, op verify/dedupe, privacy enforcement, Merkle, pull, gaps, skills, knowledge slices |
 | Cloud persistence | **Qdrant Cloud only** | Payload-only collections for devices, challenges, signed ops and sync metadata; vector collections for approved signals, knowledge and skills |
-| Object storage | MinIO / S3 | Adapter GGUF blobs, Qdrant partial snapshots, signed manifests |
-| Cloud jobs | Qdrant-backed idempotent jobs and a single-writer gateway | Retryable low-volume ingestion; no separate relational database or Redis queue |
+| Cloud job processing | Qdrant-backed idempotent operations and a single-writer gateway | Retryable low-volume ingestion; Qdrant Cloud is the only cloud persistence service |
 | Cloud LLM | Qwen2.5-7B-Instruct via Ollama (dev) / vLLM (GPU) | Gap answers, conflict adjudication, alert labels, teacher data |
 | Skill Factory | Unsloth / HF PEFT, llama.cpp `convert_lora_to_gguf.py` | Mine → synth → train → eval → convert → sign → publish |
 | Knowledge Slicer | Python worker | Picks each device's ~1 M-point slice (district, language, programmes, recent gaps) and builds its partial snapshot |
@@ -188,7 +187,7 @@ Skills: `maternal-care`, `newborn-care`, `child-illness` (IMNCI), `immunisation`
 Symptoms (voice, text or checklist) → retrieve matching danger-sign rules from `knowledge` → rule table decides *Refer now* / *24 h* / *Home care* → LLM writes the explanation citing the rule. The rule table, not the LLM, makes the referral decision.
 
 ### 5.4 OCR pipeline
-ML Kit Document Scanner → Text Recognition v2 (Latin + Devanagari) → field extraction (regex for BP, Hb, dates; LLM JSON mode for the rest) → ASHA confirms fields → `Upsert` op into `households`.
+Camera/gallery image → PaddleOCR PP-OCRv5 detector with Latin and Devanagari ONNX recognizers → field extraction → ASHA confirmation → local household record. ML Kit remains a fallback when the SHA-256-pinned Paddle model assets are unavailable or fail to load. Run powershell -ExecutionPolicy Bypass -File tools/models/fetch_paddle_ocr_models.ps1 before building so the APK contains all models and can scan offline from first use.
 
 ### 5.5 Speculative decoding from memory
 Top-3 `drafts` for (skill, query) plus top retrieved passages → llama.cpp n-gram lookup cache → the model verifies up to *k* = 5 draft tokens per pass. Acceptance rates are logged as `DraftFeedback` ops.
@@ -351,7 +350,7 @@ Embedder (multilingual-e5-small int8, 118 MB, ONNX Runtime 1.30, same phone):
 
 **Models:** Qwen2.5-1.5B-Instruct and Qwen2.5-0.5B-Instruct (Q4_K_M GGUF) · LoRA r=16 health skills (GGUF) · multilingual-e5-small (int8 ONNX) · whisper base/small multilingual (q5) · Qwen2.5-7B-Instruct (cloud only)
 
-**Cloud:** **Qdrant Cloud** · FastAPI / Uvicorn / Pydantic v2 · qdrant-client · PostgreSQL 16 · MinIO / S3 · Redis 7 + ARQ · Ollama / vLLM · Unsloth / PEFT · HDBSCAN · Next.js 15 · shadcn/ui · Recharts · Prometheus · Grafana · Toxiproxy · Docker Compose
+**Cloud:** **Qdrant Cloud only** · FastAPI / Uvicorn / Pydantic v2 · qdrant-client + FastEmbed · single-writer gateway · Ollama / vLLM and dashboard are future services, not currently deployed.
 
 ---
 

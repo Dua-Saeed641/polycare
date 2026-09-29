@@ -47,3 +47,4 @@ cloud/.env
 cloud/gateway/.dev-postgres/
 cloud/gateway/.venv/
 .paddleocr-reference/
+.fastembed-cache/

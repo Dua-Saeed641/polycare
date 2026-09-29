@@ -43,6 +43,9 @@ android {
     buildFeatures {
         compose = true
     }
+    packaging {
+        jniLibs.pickFirsts += "**/libc++_shared.so"
+    }
 }
 
 dependencies {

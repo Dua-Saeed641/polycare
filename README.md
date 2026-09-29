@@ -137,7 +137,7 @@ flowchart LR
 | **Sync & security** | Protobuf, OkHttp, hybrid logical clocks, Android Keystore, Tink (ed25519), SQLCipher |
 | **Cloud** | FastAPI, Qdrant Cloud only for database persistence, Qdrant FastEmbed for shared knowledge; dashboard and cloud AI workflows remain planned |
 
-To include offline English and Hindi OCR models in the APK, run `pwsh -File tools/models/fetch_paddle_ocr_models.ps1` before building. The script verifies pinned SHA-256 digests.
+To include offline English and Hindi OCR models in the APK, run `powershell -ExecutionPolicy Bypass -File tools/models/fetch_paddle_ocr_models.ps1` before building. The script verifies pinned SHA-256 digests.
 
 ## Getting started
 
