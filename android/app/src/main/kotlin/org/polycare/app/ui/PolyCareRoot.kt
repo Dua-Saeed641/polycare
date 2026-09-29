@@ -2,7 +2,6 @@ package org.polycare.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,7 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.CallMerge
+import androidx.compose.material.icons.automirrored.outlined.CallMerge
 import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.Medication
@@ -33,10 +32,14 @@ import androidx.compose.material.icons.outlined.MonitorHeart
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.Scaffold
@@ -57,12 +60,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.material3.HorizontalDivider
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -85,15 +84,17 @@ import org.polycare.app.radar.RadarScreen
 import org.polycare.app.conflicts.ConflictInboxScreen
 import org.polycare.app.medicine.MedicineScreen
 import org.polycare.app.team.TeamTipsScreen
+import org.polycare.app.ui.MoreScreen
 import org.polycare.app.ui.components.BrandBackground
 import org.polycare.app.ui.components.Wordmark
 import org.polycare.app.ui.theme.Brand
 
 private enum class Tab(val route: String, val label: String, val icon: ImageVector, val accent: Color) {
-    Home("home", "Home", Icons.Outlined.Home, Brand.Plum),
+    Home("home", "Today", Icons.Outlined.Home, Brand.Plum),
     Ask("ask", "Ask", Icons.Outlined.Mic, Brand.Plum),
     Triage("triage", "Triage", Icons.Outlined.MonitorHeart, Brand.Rose),
-    Search("search", "Search", Icons.Outlined.Search, Brand.Magenta),
+    Families("households", "Families", Icons.Outlined.Groups, Brand.Pink),
+    More("more", "More", Icons.Outlined.Apps, Brand.PlumDeep),
 }
 
 private const val SEARCH_ROUTE = "search"
@@ -109,6 +110,7 @@ private const val RADAR_ROUTE = "radar"
 private const val CONFLICTS_ROUTE = "conflicts"
 private const val MEDICINE_ROUTE = "medicine"
 private const val TIPS_ROUTE = "tips"
+private const val MORE_ROUTE = "more"
 
 private data class DrawerItem(val route: String, val label: String, val icon: ImageVector, val accent: Color)
 
@@ -117,14 +119,15 @@ private val DrawerDestinations = listOf(
     DrawerItem(Tab.Home.route, "Home", Tab.Home.icon, Tab.Home.accent),
     DrawerItem(Tab.Ask.route, "Ask", Tab.Ask.icon, Tab.Ask.accent),
     DrawerItem(Tab.Triage.route, "Triage", Tab.Triage.icon, Tab.Triage.accent),
-    DrawerItem(Tab.Search.route, "Search", Tab.Search.icon, Tab.Search.accent),
+    DrawerItem(SEARCH_ROUTE, "Search", Icons.Outlined.Search, Brand.Magenta),
+    DrawerItem(MORE_ROUTE, "All tools", Tab.More.icon, Tab.More.accent),
     DrawerItem(MEDICINE_ROUTE, "Medicines & counselling", Icons.Outlined.Medication, Brand.Positive),
     DrawerItem(TIPS_ROUTE, "Team tips", Icons.Outlined.Lightbulb, Brand.Positive),
     DrawerItem(HOUSEHOLDS_ROUTE, "Households", Icons.Outlined.Groups, Brand.Pink),
     DrawerItem(DUE_LIST_ROUTE, "Due list", Icons.Outlined.CalendarMonth, Brand.Red),
     DrawerItem(SCAN_ROUTE, "Scan", Icons.Outlined.DocumentScanner, Brand.Positive),
     DrawerItem(RADAR_ROUTE, "Outbreak Radar", Icons.Outlined.Radar, Brand.Rose),
-    DrawerItem(CONFLICTS_ROUTE, "Conflict inbox", Icons.Outlined.CallMerge, Brand.Magenta),
+    DrawerItem(CONFLICTS_ROUTE, "Conflict inbox", Icons.AutoMirrored.Outlined.CallMerge, Brand.Magenta),
     DrawerItem(SYNC_ROUTE, "Sync", Icons.Outlined.CloudSync, Brand.Plum),
     DrawerItem(MEMORY_ROUTE, "Memory Inspector", Icons.Outlined.Psychology, Brand.PlumDeep),
     DrawerItem(SYSTEM_ROUTE, "System", Icons.Outlined.Tune, Brand.InkMuted),
@@ -145,6 +148,13 @@ fun PolyCareRoot(
     val scope = rememberCoroutineScope()
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.hierarchy?.firstOrNull()?.route?.substringBefore('?')
+    val selectedTab = when (currentRoute) {
+        Tab.Home.route -> Tab.Home
+        Tab.Ask.route -> Tab.Ask
+        Tab.Triage.route -> Tab.Triage
+        Tab.Families.route -> Tab.Families
+        else -> Tab.More
+    }
     val drawerState = rememberDrawerState(if (debugOpenDrawer) DrawerValue.Open else DrawerValue.Closed)
 
     fun go(route: String) {
@@ -171,13 +181,11 @@ fun PolyCareRoot(
                     }
                 },
                 bottomBar = {
-                    FloatingTabBar(currentRoute) { tab -> go(tab.route) }
+                    PrimaryTabBar(selectedTab) { tab -> go(tab.route) }
                 },
             ) { padding ->
-                // +16dp beyond Scaffold's own measurement: the floating pill fades its top edge
-                // into transparency by design, but its opaque lower two-thirds still needs real
-                // scroll clearance, or the last row of a long list (e.g. Home's tool grid) ends
-                // up sitting behind it instead of above it.
+                // Keep the last action clear of persistent navigation on short screens and
+                // when the user increases system text size.
                 val content = PaddingValues(bottom = padding.calculateBottomPadding() + 16.dp)
                 val start = when {
                     autoBenchPoints != null -> SYSTEM_ROUTE
@@ -194,11 +202,11 @@ fun PolyCareRoot(
                             contentPadding = content,
                             onAsk = { voice -> go(if (voice) "$ASK_ROUTE?voice=true" else ASK_ROUTE) },
                             onNavigate = ::go,
-                            onMenu = { scope.launch { drawerState.open() } },
+                            onMenu = { go(MORE_ROUTE) },
                         )
                     }
                     composable(SYSTEM_ROUTE) {
-                        DeviceCheckScreen(contentPadding = content, autoBenchPoints = autoBenchPoints, onMenu = { scope.launch { drawerState.open() } })
+                        DeviceCheckScreen(contentPadding = content, autoBenchPoints = autoBenchPoints, onMenu = { go(MORE_ROUTE) })
                     }
                     composable(SEARCH_ROUTE) { SearchScreen(contentPadding = content, onBack = { nav.popBackStack() }, initialQuery = debugSearch) }
                     composable(
@@ -231,6 +239,7 @@ fun PolyCareRoot(
                             onAsk = { q -> go("$ASK_ROUTE?q=${android.net.Uri.encode(q)}") },
                         )
                     }
+                    composable(MORE_ROUTE) { MoreScreen(contentPadding = content, onNavigate = ::go) }
                 }
             }
         }
@@ -269,51 +278,28 @@ private fun NavDrawer(currentRoute: String?, onSelect: (String) -> Unit) {
     }
 }
 
-/**
- * Bottom navigation: four equal-width destinations, every one always labelled (an icon alone
- * says nothing to a first-time user or a screen reader), at least 64dp tall, announced as tabs
- * with a selected state. Solid rather than floating, so nothing scrolls behind it.
- */
+/** Five stable daily destinations, with labels and selected state always visible. */
 @Composable
-private fun FloatingTabBar(currentRoute: String?, onSelect: (Tab) -> Unit) {
-    Column(Modifier.fillMaxWidth().background(Brand.White)) {
-        HorizontalDivider(color = Brand.Line)
-        Row(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-        ) {
-            Tab.entries.forEach { tab ->
-                TabItem(tab, currentRoute == tab.route) { onSelect(tab) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun RowScope.TabItem(tab: Tab, selected: Boolean, onClick: () -> Unit) {
-    Column(
-        Modifier
-            .weight(1f)
-            .heightIn(min = 64.dp)
-            .clip(MaterialTheme.shapes.large)
-            .selectable(selected = selected, role = Role.Tab, onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+private fun PrimaryTabBar(selectedTab: Tab, onSelect: (Tab) -> Unit) {
+    NavigationBar(
+        containerColor = Brand.White,
+        tonalElevation = 3.dp,
     ) {
-        Box(
-            Modifier
-                .clip(CircleShape)
-                .background(if (selected) tab.accent.copy(alpha = 0.16f) else Color.Transparent)
-                .padding(horizontal = 22.dp, vertical = 4.dp),
-        ) {
-            Icon(tab.icon, contentDescription = null, tint = if (selected) Brand.Ink else Brand.InkMuted, modifier = Modifier.size(24.dp))
+        Tab.entries.forEach { tab ->
+            NavigationBarItem(
+                selected = selectedTab == tab,
+                onClick = { onSelect(tab) },
+                icon = { Icon(tab.icon, contentDescription = null) },
+                label = { Text(tab.label, maxLines = 1) },
+                alwaysShowLabel = true,
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = tab.accent,
+                    selectedTextColor = Brand.Ink,
+                    indicatorColor = tab.accent.copy(alpha = 0.14f),
+                    unselectedIconColor = Brand.InkMuted,
+                    unselectedTextColor = Brand.InkMuted,
+                ),
+            )
         }
-        Spacer(Modifier.height(2.dp))
-        Text(
-            tab.label,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            color = if (selected) Brand.Ink else Brand.InkMuted,
-        )
     }
 }

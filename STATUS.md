@@ -2,7 +2,41 @@
 
 Detailed implementation log; the live completion overview is in [MILESTONES.md](MILESTONES.md). History and reasoning are in [WORKLOG.md](WORKLOG.md).
 
-**Last updated:** 2026-09-29 (late) · MILESTONES.md is the live completion overview. This file retains implementation detail; older milestone references are historical. · **Test phones:** Xiaomi 2406ERN9CI, Android 16, 6 GB class; Realme RMX2151, Android 12, 6 GB class
+**Last updated:** 2026-09-30 · MILESTONES.md is the live completion overview. This file retains implementation detail; older milestone references are historical. · **Test phones:** Xiaomi 2406ERN9CI, Android 16, 6 GB class; Realme RMX2151, Android 12, 6 GB class
+
+---
+
+## Latest verification: OCR, device tests, navigation and accessibility (2026-09-30)
+
+- Follow-up audit found the phone still had 1.5B-era LoRA files while the shipped base model is
+  Qwen2.5-0.5B. Rebuilt both skills from the pinned 0.5B base and the tracked knowledge report,
+  fixed `train_skill.py` to discard stale entries when the base changes, verified sizes and hashes,
+  and installed both adapters on Xiaomi 2406ERN9CI. The device skill-check loaded and generated with
+  both adapters without a manifest rejection. On its single generic prompt both adapters returned
+  the same answer; domain-specific evaluation remains open. Household data and the op-log were not
+  touched.
+
+- The connected Android test suite passes **2/2** on Xiaomi 2406ERN9CI: E5 embedding parity and
+  offline English + Devanagari PaddleOCR PP-OCRv5 recognition.
+- The OCR test initially failed before recognition: OpenCV 4.5.3's native library referenced
+  `__sfp_handle_exceptions`, which Android 16 could not load. Switched from the old QuickBird
+  package to the official `org.opencv:opencv:4.10.0` Android artifact; both recognizers now run.
+  The model files are the project's revision- and SHA-256-pinned PaddlePaddle exports.
+- Refocused bottom navigation on five common jobs: Today, Ask, Triage, Families, and More. Deep
+  tool destinations keep More selected; the grouped More screen gives every secondary tool a
+  plain-language title and explanation. Home now prioritizes asking, danger-sign triage, today's
+  visits, and scanning instead of a nine-tile tool grid. The Home menu action opens the same More
+  hub, avoiding two competing navigation systems.
+- Visually checked Home and More on the phone; Android's UI hierarchy exposes all five bottom labels
+  and More's section labels, descriptions, and scrollable destinations. At the current system text
+  scale, destination rows expose focusable/clickable parent nodes. An attempt to raise the phone's
+  font scale was denied by Android's WRITE_SETTINGS policy, so the original 1.0 setting was retained.
+  A TalkBack user review and formal contrast/font-scale audit have not been completed.
+- `gradlew.bat test :app:assembleDebug` passes after these changes. Connected tests are recorded in
+  `android/app/build/outputs/androidTest-results/connected/debug`; the 17 gateway tests had passed
+  in the earlier live gateway repair.
+- Added seven Android core-common regression cases for Sync Gate privacy/wire-shape decisions and
+  concurrent field conflict behavior. The follow-up `gradlew.bat test` run passes with them.
 
 ---
 

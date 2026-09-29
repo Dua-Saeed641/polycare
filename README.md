@@ -46,11 +46,15 @@ India's **~1 million ASHA workers** each look after about 1,000 people. They tra
 
 ## Features
 
-> **Project status (2026-09-29):** M0 foundations (9/10; Qdrant Cloud is reachable and its gateway
+> **Project status (2026-09-30):** M0 foundations (9/10; Qdrant Cloud is reachable and its gateway
 > collections are initialized; the knowledge snapshot is still outstanding) and M1 on-device
-> knowledge/search (5/5) have verified results. All 17 gateway tests pass. A Xiaomi phone completed
-> live device registration, signed authentication, and a pull-only sync through USB; cloud collections
-> were empty, so push and populated district workflows remain unverified.
+> knowledge/search (5/5) have verified results. Android unit tests/build and both connected device
+> tests pass, including offline English/Devanagari PP-OCRv5 on the Xiaomi. All 17 gateway tests pass.
+> The daily-task navigation and grouped tools hub have been refreshed and checked on the phone. The
+> phone also completed live registration/authentication and a pull-only Qdrant Cloud sync through USB;
+> push and populated district workflows remain unverified.
+> Both LoRA skills are rebuilt for the current 0.5B base, installed on the Xiaomi, and loaded in the
+> device skill check. Their answers matched on one generic prompt; domain-specific quality still needs evaluation.
 > See [MILESTONES.md](MILESTONES.md) for the implementation/verification breakdown.
 
 **At the doorstep**
@@ -59,7 +63,7 @@ India's **~1 million ASHA workers** each look after about 1,000 people. They tra
 - **Medicine helper** and **counselling cards** for families
 
 **Less paperwork**
-- **Scan** MCP cards, lab reports, prescriptions and medicine strips with on-device OCR
+- **Scan** MCP cards, lab reports, prescriptions and medicine strips with on-device OCR (offline English/Hindi sample verified on the Xiaomi; real document capture still needs field testing)
 - **Household memory** searchable by meaning, plus a **due list** and **visit planner**
 - **Monthly report** and incentive tracker filled from recorded visits
 
@@ -185,7 +189,7 @@ assets/         banner, logo, Tenor Sans
 | **M0** | Foundations and feasibility checks | 9/10 verified; knowledge snapshot remains |
 | **M1** | On-device knowledge and hybrid search | 5/5 verified |
 | **M2** | Offline health assistant and triage | Core flows verified; voice/speculative paths partial |
-| **M3** | Households, OCR and daily work | Implemented; new OCR/persistence paths need device verification |
+| **M3** | Households, OCR and daily work | Bilingual offline OCR passes on device; real-document capture and household migration need verification |
 | **M4–M5** | Evolving memory and conflicts | Partial implementation; recovery/convergence tests missing |
 | **M6** | Sync with Qdrant Cloud | Xiaomi completed live registration, signed auth, and pull-only sync over USB; push and two-phone convergence remain |
 | **M7** | Outbreak Radar, gap answering, knowledge slicing | Live empty-data polls passed; populated workflows unverified; slicing not implemented |

@@ -6,7 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,16 +23,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.CallMerge
-import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.DocumentScanner
-import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.Medication
-import androidx.compose.material.icons.outlined.Lightbulb
-import androidx.compose.material.icons.outlined.Menu
+import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.Psychology
-import androidx.compose.material.icons.outlined.Radar
+import androidx.compose.material.icons.outlined.MonitorHeart
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -68,33 +61,13 @@ import org.polycare.app.ui.components.AppIconButton
 import org.polycare.app.ui.components.GlassCard
 import org.polycare.app.ui.components.Hairline
 import org.polycare.app.ui.components.MetricRow
+import org.polycare.app.ui.components.PrimaryButton
 import org.polycare.app.ui.components.SectionLabel
 import org.polycare.app.ui.components.Wordmark
 import org.polycare.app.ui.components.agoLabel
 import org.polycare.app.ui.theme.Brand
 import org.polycare.common.radar.AlertLevel
 import org.polycare.llm.LlmArtifacts
-
-private data class Feature(
-    val title: String,
-    val caption: String,
-    val icon: ImageVector,
-    val accent: Color,
-    val route: String,
-)
-
-/** Everything that is not already one tap away in the bottom bar (Home / Ask / Triage / Search). */
-private val Features = listOf(
-    Feature("Medicines", "Doses & counselling", Icons.Outlined.Medication, Brand.Positive, "medicine"),
-    Feature("Team tips", "Shared by ASHAs", Icons.Outlined.Lightbulb, Brand.Positive, "tips"),
-    Feature("Households", "Families & visits", Icons.Outlined.Groups, Brand.Pink, "households"),
-    Feature("Due list", "Today's visits", Icons.Outlined.CalendarMonth, Brand.Red, "due-list"),
-    Feature("Scan", "MCP cards & reports", Icons.Outlined.DocumentScanner, Brand.Positive, "scan"),
-    Feature("Outbreak Radar", "Early warnings", Icons.Outlined.Radar, Brand.Rose, "radar"),
-    Feature("Conflict inbox", "Compare records", Icons.Outlined.CallMerge, Brand.Magenta, "conflicts"),
-    Feature("Sync", "Share with the team", Icons.Outlined.CloudSync, Brand.Plum, "sync"),
-    Feature("Memory", "What this phone knows", Icons.Outlined.Psychology, Brand.PlumDeep, "memory"),
-)
 
 @Composable
 fun HomeScreen(
@@ -139,21 +112,21 @@ fun HomeScreen(
             .padding(horizontal = 20.dp),
     ) {
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            AppIconButton(Icons.Outlined.Menu, "Open menu", onMenu, tint = Brand.Ink, container = Brand.Glass)
+            AppIconButton(Icons.Outlined.Apps, "Open all tools", onMenu, tint = Brand.Ink, container = Brand.Glass)
             Spacer(Modifier.width(12.dp))
             Wordmark(logoSize = 26.dp)
         }
 
-        Spacer(Modifier.height(24.dp))
-        SectionLabel("Namaste", color = Brand.Plum)
+        Spacer(Modifier.height(18.dp))
+        SectionLabel("TODAY", color = Brand.Plum)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Care guidance for every doorstep, even without signal.",
-            style = MaterialTheme.typography.displaySmall,
+            "What do you need help with?",
+            style = MaterialTheme.typography.headlineMedium,
             color = Brand.Ink,
         )
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(16.dp))
         AskBar(onClick = { onAsk(false) }, onMicClick = { onAsk(true) })
 
         if (topAlert != null) {
@@ -177,15 +150,22 @@ fun HomeScreen(
             ) { onNavigate("conflicts") }
         }
 
-        Spacer(Modifier.height(28.dp))
-        SectionLabel("Tools")
-        Spacer(Modifier.height(12.dp))
-        Features.chunked(2).forEach { row ->
-            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                row.forEach { f -> FeatureTile(f, Modifier.weight(1f).fillMaxHeight()) { onNavigate(f.route) } }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
-            }
-            Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(20.dp))
+        SectionLabel("QUICK ACTIONS")
+        Spacer(Modifier.height(10.dp))
+        PrimaryButton(
+            text = "Check danger signs",
+            onClick = { onNavigate("triage") },
+            icon = Icons.Outlined.MonitorHeart,
+            accent = Brand.PlumDeep,
+        )
+        Spacer(Modifier.height(8.dp))
+        HomeActionRow("Plan today's visits", "See who needs a follow-up", Icons.Outlined.CalendarMonth) {
+            onNavigate("due-list")
+        }
+        Spacer(Modifier.height(8.dp))
+        HomeActionRow("Scan a card or report", "Read details on this phone", Icons.Outlined.DocumentScanner) {
+            onNavigate("scan")
         }
 
         Spacer(Modifier.height(20.dp))
@@ -317,32 +297,26 @@ private fun AttentionBanner(title: String, detail: String, color: Color, onClick
 }
 
 @Composable
-private fun FeatureTile(feature: Feature, modifier: Modifier, onClick: () -> Unit) {
-    GlassCard(
-        modifier
+private fun HomeActionRow(title: String, detail: String, icon: ImageVector, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 68.dp)
             .clip(MaterialTheme.shapes.large)
-            .clickable(onClickLabel = "Open ${feature.title}", role = Role.Button, onClick = onClick),
-        padding = 16.dp,
-        accent = feature.accent,
+            .background(Brand.White)
+            .border(1.dp, Brand.Line, MaterialTheme.shapes.large)
+            .clickable(onClickLabel = title, role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = "$title. $detail" }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
-            Box(
-                Modifier.size(44.dp).clip(MaterialTheme.shapes.small).background(Brand.PinkMist),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(feature.icon, contentDescription = null, tint = Brand.Plum, modifier = Modifier.size(22.dp))
-            }
-            Icon(
-                Icons.AutoMirrored.Outlined.ArrowForward,
-                contentDescription = null,
-                tint = Brand.InkMuted,
-                modifier = Modifier.size(18.dp),
-            )
+        Icon(icon, contentDescription = null, tint = Brand.Plum, modifier = Modifier.size(26.dp))
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = Brand.Ink)
+            Text(detail, style = MaterialTheme.typography.bodyMedium, color = Brand.InkMuted)
         }
-        Spacer(Modifier.height(14.dp))
-        Text(feature.title, style = MaterialTheme.typography.titleMedium, color = Brand.Ink)
-        Spacer(Modifier.height(2.dp))
-        Text(feature.caption, style = MaterialTheme.typography.bodySmall, color = Brand.InkMuted)
+        Icon(Icons.AutoMirrored.Outlined.ArrowForward, contentDescription = null, tint = Brand.InkMuted)
     }
 }
 

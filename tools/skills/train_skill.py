@@ -14,7 +14,7 @@ that gap is tracked honestly in STATUS.md rather than hidden.
 
 Inputs:
   tools/knowledge/out/report-<version>.json   passages (tools/knowledge/build_knowledge.py)
-  tools/models/qwen2.5-1.5b-instruct-hf/      base model in HF format (config+tokenizer+safetensors)
+  tools/models/qwen2.5-0.5b-instruct-hf/      base model in HF format (config+tokenizer+safetensors)
 Outputs:
   tools/skills/out/<skill>-adapter/           PEFT adapter (HF format)
   tools/skills/out/<skill>.gguf               converted for llama.cpp
@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import random
 import subprocess
 import sys
@@ -37,7 +38,10 @@ from peft import LoraConfig, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 ROOT = Path(__file__).resolve().parents[2]
-KNOWLEDGE_REPORT = ROOT / "tools" / "knowledge" / "out" / "report-v2.json"
+KNOWLEDGE_REPORT = Path(os.environ.get(
+    "POLYCARE_KNOWLEDGE_REPORT",
+    str(ROOT / "tools" / "knowledge" / "out" / "report-v2.json"),
+))
 BASE_MODEL_DIR = ROOT / "tools" / "models" / "qwen2.5-0.5b-instruct-hf"
 OUT = ROOT / "tools" / "skills" / "out"
 CONVERT_SCRIPT = ROOT / "native" / "llama.cpp" / "convert_lora_to_gguf.py"
@@ -233,6 +237,15 @@ def update_manifest(entries: dict[str, dict]) -> None:
     manifest = {"baseModel": BASE_MODEL_ID, "skills": []}
     if manifest_path.exists():
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        previous_base = manifest.get("baseModel")
+        if previous_base and previous_base != BASE_MODEL_ID:
+            print(
+                f"base model changed ({previous_base} -> {BASE_MODEL_ID}); "
+                "dropping old skill entries until each is retrained",
+                file=sys.stderr,
+            )
+            manifest["skills"] = []
+        manifest["baseModel"] = BASE_MODEL_ID
     by_id = {s["id"]: s for s in manifest["skills"]}
     by_id.update(entries)
     manifest["skills"] = sorted(by_id.values(), key=lambda s: s["id"])

@@ -59,25 +59,28 @@ not implemented. A feature is not production complete just because a screen or e
 | M0 Foundations | 9/10 verified | Qdrant Cloud is reachable and gateway collections are initialized; knowledge snapshot remains |
 | M1 On-device knowledge/search | 5/5 verified | Offline search, memory inspector, and measured phone latency |
 | M2 Offline assistant/triage | Core verified; voice and speculative paths partial | Android unit tests/build pass; live mic permission/device check outstanding |
-| M3 Households/OCR/daily work | Implemented; persistence migration and PaddleOCR need device verification | Existing repository tests; OCR instrumentation has not been run on a handset |
+| M3 Households/OCR/daily work | Partial verification | PP-OCRv5 English/Devanagari sample passes offline on the Xiaomi; household migration and camera/real-document checks remain |
 | M4 Evolving memory | Partial implementation | Encrypted op-log and rebuild paths exist; op-log/recovery tests and full mutation coverage missing |
 | M5 Conflicts | Partial implementation | Conflict inbox/file exchange exists; multi-device convergence and undo tests missing |
 | M6 Qdrant Cloud sync | Partial implementation | A real phone registered, completed signed auth, and completed a pull-only sync through the USB tunnel; no queued ops or second phone to verify push/convergence |
 | M7 Edge-to-cloud workflows | Partial implementation | Live phone polled radar, answers, Merkle, votes, and village guidance successfully against empty collections; populated radar/gap/supervisor workflows remain unverified |
 | M8 Scale | Not implemented | No million-point device benchmark or cloud slice transfer |
 | M9 Reliability | Partial implementation | Degradation/chaos controls exist; failure matrix and low-end-phone tests missing |
-| M10 Complete product | In progress | UI/docs exist; clinical test set, broad feature tests, device E2E, release build remain |
+| M10 Complete product | In progress | Daily-task navigation and tool hub refreshed and visually checked on phone; TalkBack audit, clinical test set, and release build remain |
 | M11 Optional extras | Partial | Skill Factory exists; Nearby Connections and broader language coverage remain |
 
-**Verification snapshot:** `gradlew.bat test :app:assembleDebug :app:assembleDebugAndroidTest`
-passes after excluding duplicate Java metadata from the Android APK. Android test sources compile,
-but instrumented tests were not run on a handset. Gateway lockfile check and all 17 Python tests pass.
+**Verification snapshot (2026-09-30):** `gradlew.bat test :app:assembleDebug` passes; the connected
+Android suite passes **2/2 tests** on Xiaomi 2406ERN9CI (E5 reference parity and offline English /
+Devanagari PaddleOCR). Gateway lockfile check and all 17 Python tests pass.
 The supplied Qdrant Cloud credential was verified; gateway startup initialized the `answers`,
 `auth_challenges`, `devices`, `guidance`, `knowledge`, `signals`, and `sync_ops` collections. On
 2026-09-29, a Xiaomi 2406ERN9CI completed live health check, device registration, signed challenge
 authentication, and pull requests for alerts, answers, Merkle, votes, and village-filtered guidance
 through a USB reverse tunnel. The collections were empty, so no ops were pushed and all pulled lists
 were empty. Populated clinical workflows and a two-phone integration run remain unverified.
+The OCR suite uses the official pinned PP-OCRv5 models. The previous OpenCV 4.5.3 native library
+could not load on Android 16; upgrading to OpenCV 4.10.0 fixed initialization and the physical-device
+test now reads both scripts.
 
 **Known discrepancy:** `STATUS.md`, `COMPLETION_ROADMAP.md`, and implementation summaries include
 claims from untested code. This overview separates verified behavior from code that merely exists.
@@ -87,7 +90,7 @@ claims from untested code. This overview separates verified behavior from code t
 - [x] **Qdrant Edge** compiled for arm64 and callable from Kotlin: create shard, upsert, search
 - [x] Hybrid search (dense + sparse + RRF) on Qdrant Edge, or RRF in Kotlin
 - [x] llama.cpp runs Qwen2.5-1.5B on the phone; tokens/sec measured *(5.55 tok/s decode after fixing a Debug-vs-Release native build bug — see WORKLOG)*
-- [x] Two LoRA adapters loaded and switched per request *(both real, trained adapters — `maternal-newborn` + `child-health` — loaded and hot-swapped on-device; `LlamaEngineTest.loadsTwoSkillsAndSwitchesBetweenThem` passes, 59.4s. Both changed the base model's output; the two skills didn't differ from each other on this one generic test prompt — see STATUS)*
+- [x] Two LoRA adapters loaded and switched per request *(both skills rebuilt for Qwen2.5-0.5B, SHA-256/size verified, installed on Xiaomi 2406ERN9CI, and loaded/generated through the device skill-check hook. The generic prompt produced matching skill answers, so domain-specific quality still needs evaluation.)*
 - [x] Multilingual embedder runs under ~30 ms per query
 - [x] whisper.cpp transcribes a clip offline *(English sample verified word-for-word; Hindi tested via an on-device TTS-synthesised fixture — the `base` model came back wrong-script garbage, swapped to `small` and Hindi now transcribes correctly in Devanagari; a real recorded human voice, not just TTS, is the one remaining gap — see STATUS)*
 - [x] ML Kit reads a sample MCP card (English + Devanagari) *(synthetic test card; both scripts read correctly on-device)*
@@ -119,7 +122,7 @@ claims from untested code. This overview separates verified behavior from code t
 
 ### M3 — Households, OCR and daily work
 - [x] Household and member records with consent capture *(`HouseholdsRepository`/`HouseholdsScreen`; in-memory MVP, same honest pattern as `GapsRepository` — M4 moves both behind the op-log per invariant 1. A member cannot be added unless the household's consent checkbox was set when it was registered — enforced in the repository, not just the UI, and verified on-device via `--ez household_check true`: blocked without consent, allowed with consent. Wired into Home's tile and the nav drawer, no longer a "coming later" placeholder — see STATUS)*
-- [x] **OCR scan** of MCP cards, lab reports, prescriptions and medicine strips → confirmed fields in the household record *(`McpFieldExtractor`: keyword+regex on English+Devanagari OCR output extracts name/age/village/docType/clinicalNotes; `McpConfirmationCard` in `ScanScreen` shows pre-filled editable fields + consent gate; `ScanViewModel.saveAsHousehold()` creates household + member + ROUTINE visit on save; 4 unit tests. See STATUS)*
+- [~] **OCR scan** of MCP cards, lab reports, prescriptions and medicine strips → confirmed fields in the household record *(`McpFieldExtractor` handles English+Devanagari; PP-OCRv5 English and Hindi recognizers now pass an offline physical-device sample on Android 16; real camera capture, real-world documents, and end-to-end save still need checking)*
 - [x] Visit notes searchable by meaning *(`HouseholdsRepository.searchVisits()`: cosine-similarity on embedded note vectors when the embedder is ready, term-overlap fallback when not; asynchronous embedding on every `recordVisit()` call; wired into `DueListScreen`'s "Search notes" tab — see STATUS)*
 - [x] **Due list and visit planner** *(`DueListScreen`/`DueListViewModel`; seeded with realistic ASHA due items: ANC, PNC, immunization, family planning; filter chips by visit type; tap to expand → enter notes, flag high-risk, claim incentive; `recordDueVisit()` marks the item completed. Wired into `PolyCareRoot`, nav drawer, and Home tile. `--ez due_list_check true` debug hook exercises visit recording, due-item completion, search, and report on hardware. See STATUS)*
 - [x] Monthly report and incentive tracker filled from visits *(`HouseholdsRepository.monthlyReport()` aggregates all recorded visits by type; `DueListScreen` "Monthly report" tab shows per-type visit counts and incentive lines, total ASHA incentive, and an export-for-PHC-meeting button. See STATUS)*
@@ -140,12 +143,12 @@ claims from untested code. This overview separates verified behavior from code t
 - [~] Disagreeing near-duplicates detected and marked **disputed** *(detector and tip contradiction check exist; field behavior unverified)*
 - [~] **Conflict Inbox** with side-by-side view and suggested merge *(screen and repository exist; no end-to-end test)*
 - [~] Merges keep the originals and can be undone *(local resolution history exists; undo/convergence not tested)*
-- [ ] Answers built on disputed items show a warning *(not verified in the Ask path)*
+- [~] Answers built on disputed items show a warning *(Ask labels shared tips whose persisted status is DISPUTED; the import-to-conflict-to-answer path has not been exercised end-to-end.)*
 
 ### M6 — Sync with Qdrant Cloud
 - [x] Device registration and signed authentication with the gateway *(verified from Xiaomi 2406ERN9CI against the live Qdrant-backed gateway)*
 - [~] **Push** team knowledge, de-identified signals and gaps; **pull** answers and alerts *(live phone pull endpoints returned successfully with empty collections; no pending op existed to exercise push; phone does not use `/v1/ops/pull`)*
-- [~] **Sync Gate**: private never leaves; redundant items send only a "+1"; new, widely useful knowledge goes first *(implemented in code, no two-device privacy test)*
+- [~] **Sync Gate**: private never leaves; redundant items send only a "+1"; new, widely useful knowledge goes first *(new core-common tests cover personal entities, PII keys, wire-shape requirements, metered deferral, and votes; two-device privacy verification remains open)*
 - [~] Only topics that differ are exchanged; screen shows diverged topics and bytes saved *(Merkle/team memory code exists; no two-device verification)*
 - [~] Stable-window wait, backoff, metered-data and low-battery rules *(WorkManager constraints exist; device validation needed)*
 - [~] Killed mid-sync → resumes with no loss and no duplicates *(chaos hook exists; scenario not tested)*

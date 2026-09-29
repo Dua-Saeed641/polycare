@@ -1,5 +1,8 @@
 # Gradle / Android
 .gradle/
+.gradle-home/
+.gradle-home-verify/
+.tmp/
 build/
 bin/
 local.properties
