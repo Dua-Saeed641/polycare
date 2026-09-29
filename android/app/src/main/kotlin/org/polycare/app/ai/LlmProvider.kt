@@ -16,6 +16,7 @@ import org.polycare.common.EventLog.Level
 import org.polycare.common.Verification
 import org.polycare.llm.LlamaEngine
 import org.polycare.llm.LlmArtifacts
+import org.polycare.llm.PromptFormat
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -72,8 +73,12 @@ class LlmProvider @Inject constructor(
             events.record(Category.MODEL, "LLM failed to load", mapOf("error" to "native load returned null"), Level.ERROR)
             return State.Unavailable("Model failed to load")
         }
+        // Pre-fill the constant system prompt so the first real question skips that prefill.
+        val warmStart = System.nanoTime()
+        runCatching { engine.warmUp(PromptFormat.askPrefix) }
+        val warmMs = (System.nanoTime() - warmStart) / 1_000_000
         val loadMs = (System.nanoTime() - start) / 1_000_000
-        events.record(Category.MODEL, "LLM ready", mapOf("model" to LlmArtifacts.MODEL_ID, "loadMs" to loadMs))
+        events.record(Category.MODEL, "LLM ready", mapOf("model" to LlmArtifacts.MODEL_ID, "loadMs" to loadMs, "warmMs" to warmMs))
         return State.Ready(engine, loadMs)
     }
 }

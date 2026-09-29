@@ -263,3 +263,163 @@ Surveyed what's actually missing before picking the next task, rather than assum
 - **Found and fixed a real concurrency bug while verifying this, not after shipping it.** First version wrote the persisted file from `scope.launch { ... }` on `Dispatchers.Default` on every mutation. `--ez household_check true` calls `addHousehold` then `addMember` twice in a row on the main thread — each triggers its own `persist()`, launching independent coroutines onto Default's thread pool with no ordering guarantee between them. Verified this bug empirically, not just in review: ran `household_check` across a real force-stop/relaunch cycle and watched the household count persist correctly (5→7, an honest increment) while the member count stayed flat at 4 both times despite the log confirming the member add itself succeeded (`withConsentAllowed=true`) — the classic signature of a lost update: an *earlier* snapshot's write (household-only) finishing *after* a *later* one (with the member), silently overwriting it on disk. Fixed by giving persistence its own `Dispatchers.IO.limitedParallelism(1)` dispatcher, so writes triggered by successive mutations are strictly serialized in call order instead of racing — the last `persist()` call is now always the one that lands on disk. Reverified across three more consecutive force-stop/relaunch cycles (8→10→12 households, 4→5→6 members, both incrementing by exactly the expected amount every time) before considering it fixed.
 - Full rebuild + `./gradlew test` green throughout (existing `HouseholdsRepositoryTest` suite unaffected, since it uses the context-less constructor).
 
+## 2026-09-29 (late) — Sync, Outbreak Radar, Conflict Inbox, faster LLM, accessible UI. WRITTEN, NOT RUN ON A PHONE.
+
+**Read this first if you are picking this up.** All of the work below was written on request *without on-device testing*. The only verification is that it compiles: `:app:compileDebugKotlin`, `:core-llm:buildCMakeDebug[arm64-v8a]` (the native `jni_bridge.cpp`), `:app:compileDebugUnitTestKotlin`, `:core-common:compileTestKotlin`. No test was added or run, and the existing unit suites were not re-run after these changes. Treat every "works" below as "should work". The verification checklist at the end says what to check first and how.
+
+Context: the user connected a Realme RMX2151 (Android 12), asked for component testing, hit a broken build, then redirected to "write all remaining features, make the LLM answer fast, fix the UI accessibility, don't test". MILESTONES.md is no longer followed.
+
+---
+
+### 0. Environment fixes needed to build on the dev PC (do these on any machine with a space in the Windows user name)
+
+| Problem | Cause | Fix |
+|---|---|---|
+| `:core-llm:configureCMake` fails: `add_subdirectory given source ...\native\llama.cpp which is not an existing directory` | llama.cpp / whisper.cpp sources are gitignored | `bash native/fetch-llama-cpp.sh && bash native/fetch-whisper-cpp.sh` (pinned commits) |
+| Link errors: `undefined symbol: operator new`, `__cxa_*`, `std::__ndk1::*` in `libggml-base.so` | Windows user name is "Dua Saeed" (space). CMake shortens the NDK compiler to 8.3 form `CLANG_~1.EXE`; clang loses `clang++` driver mode and links as C, dropping libc++ | Junction `C:\androidsdk` -> `C:\Users\Dua Saeed\AppData\Local\Android\Sdk`; `android/local.properties` = `sdk.dir=C\:/androidsdk` (gitignored); delete `android/core-llm/.cxx`; rebuild |
+| No LLM / speech model on the phone | not committed | downloaded and sha256-verified the two files the app expects, pushed to `files/models/`: `qwen2.5-0.5b-instruct/qwen2.5-0.5b-instruct-q4_k_m.gguf` (491,400,032 B), `whisper/ggml-small-q5_1.bin` (190,085,487 B). Hashes are in `tools/models/fetch_models.sh`. The e5 embedder and knowledge shard were already there |
+
+Not done: LoRA adapters (`maternal-newborn`, `child-health`) do not exist on this PC (`tools/skills/out/` missing). Train with `tools/skills/train_skill.py`, push with `tools/models/push_skills.sh`. `skill_check` cannot pass until then.
+
+Baseline before my changes (verified this session): JVM unit tests 43 run / 0 failed (app 14, core-common 9, core-governor 8, core-vector 8, core-embed 4 *skipped*); on-phone `embed_check` PASS (25/25 neighbours, min cos 0.9983, query p50 16.6 ms). The APK on the phone before the rebuild was from 2026-09-28.
+
+---
+
+### 1. Faster LLM answers
+
+Files: `android/core-llm/src/main/cpp/jni_bridge.cpp`, `core-llm/.../LlamaNative.kt`, `LlamaEngine.kt`, `PromptFormat.kt`, `core-common/.../PolyCareConfig.kt`, `app/.../ai/LlmProvider.kt`, `app/.../PolyCareApp.kt`.
+
+**a) KV-cache prefix reuse.** `Engine` now keeps `kv` (the tokens resident in sequence 0) and `adapterKey`. On each `generate`, the longest common prefix of the new prompt and `kv` is kept (`llama_memory_seq_rm` from that position), only the rest is decoded. The last prompt token is always re-decoded so fresh logits exist. If a partial `seq_rm` fails the cache is cleared. Every exception path clears the cache.
+`setAdapters` now returns early if the adapter set + scales are identical to the last call (`adapterFingerprint`), otherwise it applies them **and clears the KV cache** (cached keys/values were computed under the old LoRA weights).
+`LlamaEngine.warmUp(prefix)` decodes `PromptFormat.askPrefix` (system prompt + opening of the user turn) once at model load, so the first real question skips that prefill. `LlmProvider` calls it after load and logs `warmMs`.
+
+**b) Greedy decoding.** `PolyCareConfig.Llm.temperature` is now `0f` (was 0.7). `temperature <= 0` selects greedy (own `argmaxAt` over the logits, no sampler chain). Rationale: answers restate a retrieved passage, so determinism costs nothing and is required for exact speculation. `maxNewTokens` 180 -> 120. The Ask system prompt asks for 1–3 sentences (was 2–4).
+
+**c) Prompt-lookup speculative decoding.** In greedy mode, after each emitted token `lookupDraft` finds the most recent earlier occurrence of the last 3-gram (then 2-gram) in prompt+generated tokens and proposes the tokens that followed it, up to `Llm.speculativeDraftTokens` (8). The token plus the draft are decoded in **one batch with logits requested at every position** (`llama_batch_init`, explicit positions, `seq_id 0`). The model's argmax at position *i* is compared with draft *i*; the accepted prefix is emitted, the KV entries of rejected drafts are removed (`seq_rm` from `kv.size()`), and the model's own token at the first disagreement becomes the next token. Output is identical to plain greedy by construction. Set `speculativeDraftTokens = 0` to disable (also disabled automatically when `temperature > 0`).
+
+**d) Stats.** `LlamaNative.generate` now takes `maxDraft` and returns 7 values `[promptTokens, generatedTokens, promptMs, decodeMs, drafted, accepted, reusedPrefix]`. `GenerationStats` gained `draftedTokens`, `acceptedTokens`, `reusedPrefixTokens`, `draftAcceptance` (defaults keep old call sites compiling). Ask shows tok/s, "% predicted" and "N tokens cached".
+
+**e) Preload.** `PolyCareApp.onCreate` loads and warms the LLM on a background scope unless the governor rung is RECALL (`HomeStatusViewModel` also does this; `LlmProvider.get()` is mutex-guarded so the double call is harmless).
+
+**Risk spots to check first (the speed itself is unmeasured):**
+- A wrong `kv` bookkeeping bug would show as garbage or repeated text on the 2nd+ question. Compare the answer to the same question with `speculativeDraftTokens = 0`.
+- The batch-with-logits path (`llama_decode` on a multi-token batch where every `logits[i] = 1`, then `llama_get_logits_ith(ctx, i)`): if indexing is off, `draftAcceptance` will be ~0 and output may change.
+- `setAdapters` no longer calls into llama.cpp when the key is unchanged; the initial `adapterKey` is `""`, which equals "no adapters", so the base model needs no call.
+- Decode thread count is still 2 (`defaultDecodeThreadCount`), tuned for the 1.5B model on the Xiaomi. The 0.5B model on the Realme (Android 12, 6 GB) was never tuned. Try 3–4 and measure.
+- Greedy answers may read slightly more mechanical than sampled ones.
+
+---
+
+### 2. Op-log, encryption at rest (invariants 1, 2, 8)
+
+Files: `core-common/.../sync/Op.kt`, `app/.../sync/OpLogStore.kt`, `app/.../security/SecureBox.kt`, `app/.../households/HouseholdsRepository.kt`, `app/.../knowledge/GapsRepository.kt`.
+
+- `Op(opId UUIDv7, hlc, entity, action, entityId, payload: Map<String,String>)`; `OpEntity` = household, member, visit, due_item, gap, signal. `StoredOp` adds a local `seq`.
+- `OpLogStore` (`files/oplog/`): `ops.log` (one AES-GCM-sealed JSON line per op, each append fsynced), `cursor` (last acked seq, written temp+rename), `reported` (dedup keys of signals already sent). `append`, `appendInbound`, `pending`, `markSynced`, `byEntity`, `pendingCount` and `revision` flows. Idempotent by `opId`. On load, unreadable lines are counted and logged (WARN), never fatal.
+- `SecureBox`: AES-256-GCM, key generated in the Android Keystore (`polycare_local_store_v1`), sealed value = `base64(iv||ct||tag)`.
+- `HouseholdsRepository` now takes an `OpLogStore?` (primary constructor gained a parameter; the test-only 3-arg constructor passes `null`, so `HouseholdsRepositoryTest` still compiles). `addHousehold`, `addMember`, `recordVisit` append the op **before** changing state. New: `setMemberField`, `setHouseholdField`, `memberFieldValue`, `householdFieldValue`, `villages()`. The store file is now sealed (temp file + rename); a legacy plaintext file (starts with `{`) is read once and rewritten sealed.
+- `GapsRepository` is now op-log backed (its constructor changed to `(OpLogStore, EventLog)`): `log` appends an upsert op (deduped by case-insensitive text), `resolve(query)` appends a delete op, the list is rebuilt from the log at startup. Question text is capped (`PolyCareConfig.Gaps.maxQueryChars = 240`).
+- `visit.date` defaulted to the literal string `"Today"`; it is now `LocalDate.now().toString()` so reports have real dates. Old stored visits keep "Today".
+
+**Honest limits:** only gaps and signals are actually *rebuilt* from the log at startup. Households/members/visits/due items are still read from the sealed JSON store; the log records their mutations (so sync and future replay can use them) but is not yet the source of truth for them. The log has no compaction, and every line is decrypted at startup, so startup cost grows with history. The demo households (`seedInitialDataIfEmpty`) are still created on first run and do not write ops.
+
+---
+
+### 3. Sync Gate and sync client (invariants 7, 2, 8)
+
+Files: `core-common/.../sync/SyncGate.kt`, `app/.../sync/SyncRepository.kt`, `SyncViewModel.kt`, `SyncScreen.kt`, `app/.../settings/AppSettings.kt`, `AndroidManifest.xml`, `PolyCareApp.kt`.
+
+- `SyncGate.decide(op, alreadyReported)` -> `Push` | `KeepLocal(reason)` | `PlusOne(dedupKey)`. Only `signal` and `gap` may be pushed; anything else is keep-local; any payload key in {name, headOfHousehold, memberName, phone, address, notes, householdId, memberId} forces keep-local; a signal whose `dedupKey` was already reported becomes a "+1".
+- `SyncRepository.syncNow()`: walks `pending()` in order; batches pushes to `PolyCareConfig.Sync.chunkBytes` (256 KB); **cursor advances only after the gateway acked the chunk** and covers the keep-local ops decided so far; `markReported` after ack. Then `pull`: stores the cloud's alerts (`SignalsRepository.setCloudAlerts`), supervisor answers (`TeamGuidanceRepository.merge`, and resolves the matching local gap), and persists the pull cursor. Results (`SyncStats`: pushed, kept local, +1s, bytes sent, bytes not sent, answers, alerts) persist for the Sync screen. Errors become friendly text; nothing is lost.
+- `startAutoSync()` (called from `PolyCareApp`): `registerDefaultNetworkCallback`; when a network appears it waits `Sync.stableWindowMs` (30 s) and syncs if auto-sync is on, a gateway is set and ops are pending.
+- `AppSettings`: gateway URL, optional bearer token, village, auto-sync flag (SharedPreferences).
+- Manifest: added `INTERNET`, `ACCESS_NETWORK_STATE`, and `android:usesCleartextTraffic="true"` so a LAN `http://` gateway works.
+- Sync screen: status card with live-region announcements, Sync now, last-sync numbers, "stays on this phone" explanation, questions/answers, connection form with Test connection.
+
+**Limits:** auto-sync uses a network callback that only lives while the process is alive; there is **no WorkManager job**, so nothing syncs while the app is not running (invariant 8's restart-safe background work is only partly met: the cursor logic is restart-safe, the scheduling is not). Cleartext traffic is enabled globally, which is fine for a demo LAN but must become https + a cert (or a network-security-config scoped to specific hosts) before real use. `clock.now()` is called to read the device node id, which needlessly advances the HLC; inject the node id instead.
+
+---
+
+### 4. Outbreak Radar
+
+Files: `core-common/.../radar/OutbreakRadar.kt`, `app/.../radar/SignalsRepository.kt`, `RadarScreen.kt`, `app/.../triage/TriageViewModel.kt`, `TriageScreen.kt`, `PolyCareConfig.Radar`.
+
+- A *signal* is: category, the marked danger-sign ids, a coarse village, the day. Encoded as a multi-hot vector over the sorted union of all triage sign ids; `modelId = "danger-signs-v1"`. No name, no household id, no free text. `dedupKey = category|sortedSignIds|village|day`.
+- `OutbreakRadar.detect` groups signals in the last 7 days by `modelId` (invariant 4), leader-clusters on cosine >= 0.80, and reports ALERT when a cluster has >= 3 cases from >= 2 villages, WATCH when a single cluster has >= 6. The Python copy in `cloud/gateway/radar.py` must stay in sync (thresholds are env-tunable there).
+- `SignalsRepository`: `record(category, signIds, village)` appends a `signal` op; shows local detections merged with the alerts the cloud last returned (cloud wins when the label matches); cloud alerts persist in `radar_cloud_alerts.json`.
+- Triage: after marking a sign a "Help spot outbreaks" card appears with village chips (from the ASHA's households plus the village set in Sync) and an explicit **Log this case for the radar** button. Nothing is reported automatically.
+- Home shows a red banner for the top ALERT; the radar screen lists alerts and this phone's signals.
+
+**Limits:** the phone alone rarely reaches 3 cases in 2 villages, so real alerts come from the gateway. Signals from care-at-home cases with no signs are not created.
+
+---
+
+### 5. Conflict Inbox
+
+Files: `core-common/.../conflict/ConflictDetector.kt`, `app/.../conflicts/ConflictsRepository.kt`, `ConflictInboxScreen.kt`.
+
+- Export: consented households + members to a JSON file the user saves (`CreateDocument`); format id `polycare-households` v1. Import: a teammate's file via `OpenDocument`.
+- Matching: household by id, else by head+village (case-insensitive); member by id, else by name within the household. Unmatched incoming records are added (only consented households). For matches, `ConflictDetector.detect` compares fields; a different value from a **different author** is always a conflict, a later edit by the **same** device is not. Both values are kept in a sealed `conflicts.json`.
+- Resolve: Keep mine / Use theirs / Keep both (text fields only; ages cannot be merged). Each resolution stores the previous local value and **Undo** restores it and reopens the conflict.
+- This is deliberately *not* automatic sync: the user chooses to export and import, so invariant 7 (households never in the outbox or mesh) is not violated. If you later want phone-to-phone transfer, it needs a design decision about consent.
+
+**Limits:** matching by name is a heuristic; importing the same file twice is safe (already-open conflicts are not duplicated) but a renamed person would create a new member.
+
+---
+
+### 6. Medicines and counselling, supervisor answers
+
+- `app/.../medicine/`: 15 `TopicCard`s (ORS, zinc, IFA, vitamin A, calcium, chlorhexidine, albendazole, paracetamol; breastfeeding, KMC, complementary feeding, handwashing, birth spacing, pregnancy danger signs, immunisation). A card holds only a **query**; expanding it runs `KnowledgeRepository.search(query, limit = 3)` and shows the passages with title and page. No clinical text is written by us. "Ask a question about this" opens Ask with the query (route `ask?voice={voice}&q={q}`). If the ASHA modules do not contain a topic (e.g. paracetamol dosing) the card says so.
+- `app/.../team/TeamGuidanceRepository.kt`: answers from supervisors, merged by id, found by >= 60% term overlap. Ask and the no-answer card show them first, labelled "Answer from your supervisor ... team guidance, not an official protocol". When a team answer exists, no gap is logged.
+
+---
+
+### 7. Cloud gateway (`cloud/gateway`)
+
+`main.py` (FastAPI, SQLite in `data/polycare.db`), `radar.py`, `static/dashboard.html`, `requirements.txt`, `Dockerfile`, `../docker-compose.yml`, `README.md` (wire format table).
+- `POST /v1/ops` accepts only `signal` and `gap`; anything else, or a payload with an identifying key, is counted in `rejected` and **never stored**. `INSERT OR IGNORE` on `op_id` (idempotent). `plusOnes` increment `signals.count` for the matching `dedup_key`.
+- `GET /v1/pull?device&since` returns `{cursor, alerts, answers}`; `POST /v1/gaps/answer` (supervisor) creates an answer; `GET /v1/alerts|gaps|stats`; `/` serves the supervisor dashboard (alerts, open questions grouped by text, answer form, 10 s refresh).
+- Auth: `POLYCARE_TOKEN` (phones), `SUPERVISOR_TOKEN` (answering; falls back to `POLYCARE_TOKEN`). Both unset = open, which is fine only on a private network.
+- Optional: if `QDRANT_URL` is set, signal vectors are also upserted into a `signals` Qdrant collection (best-effort, never fails a push).
+- Not run: I never started this server. Python was not linted (`ruff`/`mypy --strict` are the project rule for `cloud/`), and there are no gateway tests yet.
+
+---
+
+### 8. UI: accessibility, alignment, structure
+
+New `app/.../ui/components/Controls.kt`: `AppIconButton` (48 dp, spoken label), `ScreenHeader` (48 dp back/menu button, heading semantics, ink text on an accent-tinted disc because pink/rose fail 3:1 contrast as icon colour), `PrimaryButton` / `SecondaryButton` (52 dp min height, role Button, disabled state), `ToggleRow` (whole row is the checkbox target), `ChoiceChip` + `ChipRow` (48 dp, selected state, wraps), `tapTarget`, `MinTouch`, `ButtonHeight`. `Format.kt`: `agoLabel`, `bytesLabel`. `LabelledField` now uses a real floating **label** instead of a placeholder and takes `imeAction`, `supporting`, `singleLine`.
+
+Screen-by-screen:
+- **Navigation** (`PolyCareRoot.kt`): the floating icon-only pill is replaced by a solid bottom bar with four always-labelled tabs, >= 64 dp, role Tab with selected state. The drawer lists every built screen (no more "coming later"), scrolls, and has 52 dp items. New routes: medicine, sync, radar, conflicts. Bug fixed: the Ask tab was never highlighted because its route carried arguments; `currentRoute` now strips `?...`. `notReady`/milestone plumbing removed.
+- **Home:** equal-height 2-column tiles (`IntrinsicSize.Min`), semantic ask bar + separate 56 dp mic, attention banners (radar alert, records to review), "On this phone" now shows the real LLM state, skills count and last sync.
+- **Ask:** suggestion chips, labelled field, 56 dp mic with pulsing ring and stop icon while recording, live-region status, streaming caret, passage shown immediately while the explanation streams, speed row, supervisor-answer card.
+- **Triage:** wrapping category chips (the three long labels overflowed before), toggleable 56 dp sign rows, decision announced via live region, radar card.
+- **Households / Scan / Due list / Search / Memory / System:** same header; consent and high-risk toggles are `ToggleRow`; actions are `PrimaryButton`/`SecondaryButton`; filters and tabs are `ChoiceChip`/selectable tabs; Search clear button 48 dp and the search field has a content description; Memory "Load more" is a real button; notes fields are multi-line; error text moved from Rose to Red for contrast.
+- **Due list export is now real:** a CSV via `CreateDocument("text/csv")` with counts and incentives per visit type plus one row per visit (date, type, high-risk, incentive). **No names and no visit notes.** The month label is the current month (was hard-coded "September 2026").
+
+**Not verified:** any TalkBack traversal order, font scale 200%, the `IntrinsicSize` tile row with long titles, small-width phones, landscape.
+
+---
+
+### 9. What is NOT built (be honest with users)
+
+Skill Factory; knowledge slicing / Qdrant partial snapshots (`knowledge`, `skills`, `atlas` still only change via the push scripts); semantic Merkle anti-entropy; Chaos Panel; phone-to-phone mesh; WorkManager scheduling (see 3); https; Hindi speech verification (whisper-small installed, never run); trained LoRA adapters; removal of seeded demo households; speculative decoding *with a separate draft model* (only prompt-lookup exists); a real op-log replay for households; the web dashboard beyond the single HTML page.
+
+---
+
+### 10. Verification checklist (do these in order)
+
+1. Build and install: `cd android && ./gradlew.bat :app:installDebug` (needs section 0). The phone must have the two model files from section 0.
+2. **LLM speed and correctness:** `adb shell am start -n org.polycare.app/.MainActivity --ez llm_check true`, then ask the same 3 questions twice. Read `PolyCareEvent` in logcat: `tokensPerSecond`, `drafted`/`accepted`, `cachedPromptTokens`, `promptMs`. Then set `speculativeDraftTokens = 0` and confirm the text is identical. Record the numbers in STATUS.md (the old 17.5 tok/s baseline was measured on the Xiaomi).
+3. **Restart safety:** `household_check`, then `adb shell am force-stop`, relaunch, confirm counts. Confirm an old plaintext `households_store.json` migrates (install over the 2026-09-28 build).
+4. **Gateway:** `cd cloud && docker compose up -d`, open `http://localhost:8080`; in the app set the gateway to `http://<PC LAN IP>:8080`, Test connection, log 3 similar triage cases with two different village names (use two phones or change the village between cases), Sync now; expect an ALERT on the dashboard and on the phone after the next sync. Answer a gap on the dashboard, sync, ask the same question.
+5. **Privacy proof:** after a sync, inspect the SQLite `ops` table: only `signal` and `gap` rows, no names. Try `curl -X POST /v1/ops` with a `member` op: expect `rejected: 1`.
+6. **Kill during sync:** start a sync with many ops, `force-stop` mid-way, relaunch and sync again: no loss, no duplicates (gateway `duplicate` count rises). This is the test CLAUDE.md requires for any sync change and it does not exist yet.
+7. **Conflicts:** export from phone A, edit a member's age on phone B, import on B, resolve each way, Undo.
+8. **Accessibility:** enable TalkBack, walk Home, Ask, Triage, Sync, Conflict inbox; set font size to largest; check nothing is clipped and every button is announced.
+9. Write the missing tests: `SyncGate`, `OutbreakRadar`, `ConflictDetector` (pure Kotlin in `core-common`, easy), `OpLogStore` idempotency and cursor (instrumented, needs Keystore), gateway `pytest`.
+10. Run `ruff` and `mypy --strict` on `cloud/gateway`.
+
+### 11. Where things are (quick map)
+
+`android/core-common/.../sync|radar|conflict` pure logic · `android/app/.../sync|radar|conflicts|team|medicine|settings|security` new app code · `android/app/.../ui/components/Controls.kt` shared UI · `android/core-llm/src/main/cpp/jni_bridge.cpp` speed work · `cloud/gateway` server · `STATUS.md` top section mirrors this entry in short form.

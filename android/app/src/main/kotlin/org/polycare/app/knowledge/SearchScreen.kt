@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -34,6 +35,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.polycare.app.ui.components.GlassCard
+import org.polycare.app.ui.components.ScreenHeader
 import org.polycare.app.ui.components.SectionLabel
 import org.polycare.app.ui.theme.Brand
 
@@ -85,16 +89,7 @@ fun SearchScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(40.dp).clip(CircleShape).background(Brand.Magenta.copy(alpha = 0.10f)).clickable(onClick = onBack),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Brand.Magenta, modifier = Modifier.size(20.dp))
-                }
-                Spacer(Modifier.width(12.dp))
-                SectionLabel("Search guidance", color = Brand.Magenta)
-            }
+            ScreenHeader("Search guidance", Brand.Magenta, onBack = onBack)
         }
         item {
             SearchField(query, viewModel::onQueryChange, { viewModel.searchNow() }, focus)
@@ -155,10 +150,11 @@ private fun SearchField(value: String, onChange: (String) -> Unit, onSubmit: () 
             .clip(CircleShape)
             .background(Brand.Glass)
             .border(1.dp, Brand.Line, CircleShape)
-            .padding(horizontal = 18.dp, vertical = 14.dp),
+            .heightIn(min = 56.dp)
+            .padding(start = 18.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Outlined.Search, contentDescription = null, tint = Brand.Plum, modifier = Modifier.size(20.dp))
+        Icon(Icons.Outlined.Search, contentDescription = null, tint = Brand.Plum, modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(12.dp))
         Box(Modifier.weight(1f)) {
             if (value.isEmpty()) {
@@ -172,15 +168,16 @@ private fun SearchField(value: String, onChange: (String) -> Unit, onSubmit: () 
                 cursorBrush = SolidColor(Brand.Plum),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
-                modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focus)
+                    .semantics { contentDescription = "Search guidance. Symptom, medicine or vaccine, in English or Hindi." },
             )
         }
         if (value.isNotEmpty()) {
-            Icon(
-                Icons.Outlined.Close,
-                contentDescription = "Clear",
-                tint = Brand.InkMuted,
-                modifier = Modifier.size(20.dp).clip(CircleShape).clickable { onChange("") },
+            org.polycare.app.ui.components.AppIconButton(
+                Icons.Outlined.Close, "Clear search", { onChange("") },
+                tint = Brand.InkMuted, container = androidx.compose.ui.graphics.Color.Transparent,
             )
         }
     }
@@ -210,7 +207,7 @@ private fun HitCard(hit: KnowledgeHit, topScore: Float) {
     // relative to this result set's own top score instead: a meaningful ranking signal, not a
     // fabricated absolute confidence number.
     val relativeMatch = if (topScore > 0f) (hit.score / topScore * 100).toInt().coerceIn(0, 100) else 100
-    GlassCard(Modifier.fillMaxWidth().animateContentSize().clip(MaterialTheme.shapes.large).clickable { expanded = !expanded }, padding = 18.dp) {
+    GlassCard(Modifier.fillMaxWidth().animateContentSize().clip(MaterialTheme.shapes.large).clickable(onClickLabel = if (expanded) "Collapse passage" else "Read full passage", role = androidx.compose.ui.semantics.Role.Button) { expanded = !expanded }, padding = 18.dp) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Tag(shortSource(hit.sourceId) + " · p${hit.page}", Brand.Blush, Brand.Plum)
             Tag(if (hit.lang == "hi") "हिंदी" else "EN", Brand.PinkMist, Brand.InkMuted)
@@ -225,7 +222,7 @@ private fun HitCard(hit: KnowledgeHit, topScore: Float) {
                 Text(
                     "Several vaccines share this printed row. Check the printed schedule.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Brand.Rose,
+                    color = Brand.Red,
                 )
             }
         }
@@ -255,15 +252,5 @@ private fun HitCard(hit: KnowledgeHit, topScore: Float) {
 
 @Composable
 private fun Chip(text: String, onClick: () -> Unit) {
-    Text(
-        text,
-        style = MaterialTheme.typography.bodyMedium,
-        color = Brand.Plum,
-        modifier = Modifier
-            .clip(CircleShape)
-            .background(Brand.Glass)
-            .border(1.dp, Brand.Line, CircleShape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-    )
+    org.polycare.app.ui.components.ChoiceChip(text, selected = false, onClick = onClick)
 }

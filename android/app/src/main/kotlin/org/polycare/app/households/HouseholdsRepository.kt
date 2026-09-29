@@ -11,6 +11,10 @@ import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import org.polycare.app.ai.EmbedderProvider
+import org.polycare.app.security.SecureBox
+import org.polycare.app.sync.OpLogStore
+import org.polycare.common.sync.Op
+import org.polycare.common.sync.OpEntity
 import org.polycare.common.EventLog
 import org.polycare.common.EventLog.Category
 import org.polycare.common.Hlc
@@ -112,15 +116,11 @@ data class VisitSearchResult(
  * "Due list and visit planner", "Visit notes searchable by meaning", "Monthly report and
  * incentive tracker").
  *
- * Persisted as a plain JSON file in app-private storage (`files/households_store.json`) — not
- * the op-log architecture invariant 1 describes for `households` (that needs the op-log itself,
- * which doesn't exist yet), but real persistence, not nothing: an ASHA worker's registered
- * households surviving an app restart is a correctness requirement on its own, independent of
- * which storage mechanism eventually backs it. When the op-log lands, this file format goes
- * away in favour of replaying ops; until then, losing every household on a restart would be a
- * much bigger problem than which storage engine wrote the file.
- * Invariant 7: personal health records never leave the phone. Nothing here is ever placed in an
- * outbox — this file is never touched by anything sync-related.
+ * Every mutation is appended to the encrypted op-log first (invariant 1); the JSON store in
+ * app-private storage (`files/households_store.json`, AES-GCM sealed with a Keystore key) is a
+ * rebuildable view of it that keeps app start fast.
+ * Invariant 7: personal health records never leave the phone. The Sync Gate marks every
+ * household, member and visit op keep-local, so none of them is ever sent.
  */
 @Singleton
 class HouseholdsRepository internal constructor(
@@ -129,6 +129,7 @@ class HouseholdsRepository internal constructor(
     private val events: EventLog,
     private val embedders: EmbedderProvider?,
     private val context: Context?,
+    private val opLog: OpLogStore?,
     @Suppress("UNUSED_PARAMETER") forTestingOnly: Boolean,
 ) {
     @Inject
@@ -138,14 +139,15 @@ class HouseholdsRepository internal constructor(
         events: EventLog,
         embedders: EmbedderProvider,
         @ApplicationContext context: Context,
-    ) : this(clock, idGen, events, embedders, context, false)
+        opLog: OpLogStore,
+    ) : this(clock, idGen, events, embedders, context, opLog, false)
 
     /** Test-only: no context means no persistence, so tests stay fast and hermetic. */
     constructor(
         clock: HlcClock,
         idGen: UuidV7,
         events: EventLog,
-    ) : this(clock, idGen, events, null, null, true)
+    ) : this(clock, idGen, events, null, null, null, true)
 
     private val scope = CoroutineScope(Dispatchers.Default)
 
@@ -242,6 +244,11 @@ class HouseholdsRepository internal constructor(
 
     fun addHousehold(headOfHousehold: String, village: String, consentGiven: Boolean): Household {
         val household = Household(idGen.next().toString(), headOfHousehold, village, consentGiven, clock.now())
+        // Invariant 1: the op is appended before the view changes.
+        opLog?.append(
+            OpEntity.HOUSEHOLD, Op.UPSERT, household.id,
+            mapOf("headOfHousehold" to headOfHousehold, "village" to village, "consent" to consentGiven.toString()),
+        )
         _households.value = listOf(household) + _households.value
         events.record(Category.HOUSEHOLDS, "Household added", mapOf("consentGiven" to consentGiven))
         persist()
@@ -256,6 +263,10 @@ class HouseholdsRepository internal constructor(
             return null
         }
         val member = Member(idGen.next().toString(), householdId, name, age, relation, clock.now())
+        opLog?.append(
+            OpEntity.MEMBER, Op.UPSERT, member.id,
+            mapOf("householdId" to householdId, "name" to name, "age" to age.toString(), "relation" to relation),
+        )
         _members.value = listOf(member) + _members.value
         events.record(Category.HOUSEHOLDS, "Member added", mapOf("relation" to relation))
         persist()
@@ -276,7 +287,7 @@ class HouseholdsRepository internal constructor(
         notes: String,
         highRisk: Boolean = false,
         incentiveRupees: Int = type.defaultIncentiveRupees,
-        date: String = "Today",
+        date: String = java.time.LocalDate.now().toString(),
         dueItemId: String? = null,
     ): Visit? {
         val household = _households.value.firstOrNull { it.id == householdId } ?: return null
@@ -298,6 +309,13 @@ class HouseholdsRepository internal constructor(
             hlc = clock.now(),
         )
 
+        opLog?.append(
+            OpEntity.VISIT, Op.UPSERT, visit.id,
+            mapOf(
+                "householdId" to householdId, "memberId" to (memberId ?: ""), "type" to type.name,
+                "notes" to notes, "date" to date, "highRisk" to highRisk.toString(),
+            ),
+        )
         _visits.value = listOf(visit) + _visits.value
 
         if (dueItemId != null) {
@@ -383,6 +401,53 @@ class HouseholdsRepository internal constructor(
         }.sortedByDescending { it.score }
     }
 
+    /** Current value of an editable member field, for conflict detection. */
+    fun memberFieldValue(member: Member, field: String): String? = when (field) {
+        "name" -> member.name
+        "age" -> member.age.toString()
+        "relation" -> member.relation
+        else -> null
+    }
+
+    /** Sets one member field (op-first). Returns false if the member or field is unknown. */
+    fun setMemberField(memberId: String, field: String, value: String): Boolean {
+        val m = _members.value.firstOrNull { it.id == memberId } ?: return false
+        val updated = when (field) {
+            "name" -> m.copy(name = value)
+            "age" -> m.copy(age = value.trim().toIntOrNull() ?: return false)
+            "relation" -> m.copy(relation = value)
+            else -> return false
+        }.copy(hlc = clock.now())
+        opLog?.append(OpEntity.MEMBER, Op.UPSERT, m.id, mapOf("householdId" to m.householdId, "field" to field, "value" to value))
+        _members.value = _members.value.map { if (it.id == memberId) updated else it }
+        events.record(Category.HOUSEHOLDS, "Member field updated", mapOf("field" to field))
+        persist()
+        return true
+    }
+
+    fun householdFieldValue(h: Household, field: String): String? = when (field) {
+        "headOfHousehold" -> h.headOfHousehold
+        "village" -> h.village
+        else -> null
+    }
+
+    fun setHouseholdField(householdId: String, field: String, value: String): Boolean {
+        val h = _households.value.firstOrNull { it.id == householdId } ?: return false
+        val updated = when (field) {
+            "headOfHousehold" -> h.copy(headOfHousehold = value)
+            "village" -> h.copy(village = value)
+            else -> return false
+        }.copy(hlc = clock.now())
+        opLog?.append(OpEntity.HOUSEHOLD, Op.UPSERT, h.id, mapOf("field" to field, "value" to value))
+        _households.value = _households.value.map { if (it.id == householdId) updated else it }
+        events.record(Category.HOUSEHOLDS, "Household field updated", mapOf("field" to field))
+        persist()
+        return true
+    }
+
+    /** Distinct villages of this ASHA's own households, for choosing where a signal is reported. */
+    fun villages(): List<String> = _households.value.map { it.village.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
+
     /**
      * Computes monthly report and incentive tracker summary from recorded visits
      * ("Monthly report and incentive tracker filled from visits").
@@ -432,7 +497,13 @@ class HouseholdsRepository internal constructor(
             put("dueItems", JSONArray(_dueItems.value.map { it.toJson() }))
         }
         scope.launch(writeDispatcher) {
-            runCatching { file.writeText(snapshot.toString()) }
+            runCatching {
+                // Encrypted at rest (Android Keystore AES-GCM); temp + rename so a kill mid-write
+                // leaves the previous complete file, never a truncated one.
+                val tmp = File(file.parentFile, file.name + ".tmp")
+                tmp.writeText(SecureBox.seal(snapshot.toString()))
+                if (!tmp.renameTo(file)) { file.delete(); tmp.renameTo(file) }
+            }
                 .onFailure { events.record(Category.HOUSEHOLDS, "Failed to persist households store", mapOf("error" to it.javaClass.simpleName), EventLog.Level.ERROR) }
         }
     }
@@ -442,11 +513,16 @@ class HouseholdsRepository internal constructor(
         val file = storeFile ?: return false
         if (!file.exists()) return false
         return runCatching {
-            val root = JSONObject(file.readText())
+            val raw = file.readText()
+            // A store written before encryption existed starts with '{'; read it once, then
+            // rewrite it sealed below.
+            val legacyPlaintext = raw.trimStart().startsWith("{")
+            val root = JSONObject(if (legacyPlaintext) raw else (SecureBox.open(raw) ?: error("store failed to decrypt")))
             _households.value = root.getJSONArray("households").toObjectList(::householdFromJson)
             _members.value = root.getJSONArray("members").toObjectList(::memberFromJson)
             _visits.value = root.getJSONArray("visits").toObjectList(::visitFromJson)
             _dueItems.value = root.getJSONArray("dueItems").toObjectList(::dueItemFromJson)
+            if (legacyPlaintext) persist()
             true
         }.getOrElse {
             events.record(Category.HOUSEHOLDS, "Failed to load persisted households store", mapOf("error" to it.javaClass.simpleName), EventLog.Level.ERROR)

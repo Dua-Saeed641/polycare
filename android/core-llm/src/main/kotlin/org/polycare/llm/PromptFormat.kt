@@ -15,7 +15,7 @@ object PromptFormat {
         "(community health) workers in India, used offline on a phone. Answer ONLY using the " +
         "passage given below — never use outside knowledge and never guess. If the passage does " +
         "not answer the question, say so plainly and suggest referring to the ANM or PHC. Keep " +
-        "the answer to 2–4 short sentences, in the same language as the question. Never state a " +
+        "the answer to 1–3 short sentences, in the same language as the question. Never state a " +
         "diagnosis; only explain the guidance in the passage."
 
     private const val TRIAGE_SYSTEM = "You explain a health-worker's already-decided triage " +
@@ -28,6 +28,12 @@ object PromptFormat {
         append("<|im_start|>user\n").append(user).append("<|im_end|>\n")
         append("<|im_start|>assistant\n")
     }
+
+    /**
+     * The constant start of every Ask prompt (system message + opening of the user turn). Fed to
+     * the model once at load time so its KV entries are ready and never recomputed per question.
+     */
+    val askPrefix: String = "<|im_start|>system\n$ASK_SYSTEM<|im_end|>\n<|im_start|>user\n"
 
     fun ask(question: String, passageText: String, sourceTitle: String): String = chatMl(
         ASK_SYSTEM,

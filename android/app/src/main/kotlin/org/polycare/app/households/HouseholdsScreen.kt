@@ -40,10 +40,14 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.polycare.app.ui.components.GlassCard
+import org.polycare.app.ui.components.ScreenHeader
 import org.polycare.app.ui.components.Hairline
 import org.polycare.app.ui.components.LabelledField
 import org.polycare.app.ui.components.SectionLabel
 import org.polycare.app.ui.components.StatusPill
+import org.polycare.app.ui.components.PrimaryButton
+import org.polycare.app.ui.components.SecondaryButton
+import org.polycare.app.ui.components.ToggleRow
 import org.polycare.app.ui.theme.Brand
 
 private val Accent = Brand.Pink
@@ -66,16 +70,7 @@ fun HouseholdsScreen(contentPadding: PaddingValues, onBack: () -> Unit, viewMode
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(40.dp).background(Accent.copy(alpha = 0.10f), CircleShape).clickable(onClick = onBack),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Accent, modifier = Modifier.size(20.dp))
-                }
-                Spacer(Modifier.width(12.dp))
-                SectionLabel("Households", color = Accent)
-            }
+            ScreenHeader("Households", Accent, onBack = onBack)
         }
         item {
             Spacer(Modifier.height(4.dp))
@@ -123,31 +118,23 @@ private fun AddHouseholdCard(onAdd: (String, String, Boolean) -> Unit) {
         Spacer(Modifier.height(10.dp))
         LabelledField("Village / area", village) { village = it }
         Spacer(Modifier.height(12.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { consent = !consent }) {
-            Checkbox(checked = consent, onCheckedChange = { consent = it }, colors = CheckboxDefaults.colors(checkedColor = Accent))
-            Spacer(Modifier.width(4.dp))
-            Text(
-                "This household has given consent for their information to be recorded",
-                style = MaterialTheme.typography.bodySmall,
-                color = Brand.Ink,
-            )
-        }
-        Spacer(Modifier.height(14.dp))
+        ToggleRow(
+            "This household has given consent for their information to be recorded",
+            consent, { consent = it }, accent = Accent,
+        )
+        Spacer(Modifier.height(8.dp))
         val canAdd = head.isNotBlank() && village.isNotBlank() && consent
-        Row(
-            Modifier
-                .background(if (canAdd) Accent else Brand.Line, MaterialTheme.shapes.large)
-                .clickable(enabled = canAdd) {
-                    onAdd(head, village, consent)
-                    head = ""; village = ""; consent = false
-                }
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-        ) {
-            Text("Add household", style = MaterialTheme.typography.titleSmall, color = if (canAdd) Brand.Paper else Brand.InkMuted)
-        }
+        PrimaryButton(
+            "Add household",
+            onClick = {
+                onAdd(head, village, consent)
+                head = ""; village = ""; consent = false
+            },
+            enabled = canAdd, accent = Accent,
+        )
         if (head.isNotBlank() && village.isNotBlank() && !consent) {
             Spacer(Modifier.height(8.dp))
-            Text("Consent is required before a household can be registered.", style = MaterialTheme.typography.labelSmall, color = Brand.Rose)
+            Text("Consent is required before a household can be registered.", style = MaterialTheme.typography.labelSmall, color = Brand.Red)
         }
     }
 }
@@ -160,7 +147,7 @@ private fun HouseholdCard(
     onToggle: () -> Unit,
     onAddMember: (String, Int, String) -> Boolean,
 ) {
-    GlassCard(Modifier.fillMaxWidth().clickable(onClick = onToggle)) {
+    GlassCard(Modifier.fillMaxWidth().clickable(onClickLabel = if (expanded) "Collapse household" else "Open household", role = androidx.compose.ui.semantics.Role.Button, onClick = onToggle)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column {
                 Text(household.headOfHousehold, style = MaterialTheme.typography.titleMedium, color = Brand.Ink)
@@ -206,21 +193,15 @@ private fun AddMemberRow(onAdd: (String, Int, String) -> Boolean) {
             LabelledField("Relation", relation, modifier = Modifier.weight(1f)) { relation = it }
         }
         Spacer(Modifier.height(8.dp))
-        Row(
-            Modifier
-                .background(Accent.copy(alpha = 0.12f), MaterialTheme.shapes.large)
-                .clickable(enabled = name.isNotBlank()) {
-                    if (onAdd(name, age.toIntOrNull() ?: 0, relation.ifBlank { "Member" })) {
-                        name = ""; age = ""; relation = ""
-                    }
+        SecondaryButton(
+            "Add member",
+            onClick = {
+                if (onAdd(name, age.toIntOrNull() ?: 0, relation.ifBlank { "Member" })) {
+                    name = ""; age = ""; relation = ""
                 }
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Outlined.PersonAdd, contentDescription = null, tint = Accent, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Add member", style = MaterialTheme.typography.labelLarge, color = Accent)
-        }
+            },
+            icon = Icons.Outlined.PersonAdd, enabled = name.isNotBlank(), accent = Accent,
+        )
     }
 }
 

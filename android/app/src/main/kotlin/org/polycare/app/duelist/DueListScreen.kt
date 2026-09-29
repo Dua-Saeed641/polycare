@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -51,6 +53,7 @@ import org.polycare.app.households.MonthlyIncentiveReport
 import org.polycare.app.households.VisitSearchResult
 import org.polycare.app.households.VisitType
 import org.polycare.app.ui.components.GlassCard
+import org.polycare.app.ui.components.ScreenHeader
 import org.polycare.app.ui.components.Hairline
 import org.polycare.app.ui.components.LabelledField
 import org.polycare.app.ui.components.SectionLabel
@@ -74,6 +77,16 @@ fun DueListScreen(
     var activeTab by remember { mutableIntStateOf(0) } // 0: Due Visits, 1: Search Notes, 2: Monthly Report
     var expandedDueId by remember { mutableStateOf<String?>(null) }
     var exportConfirmed by remember { mutableStateOf(false) }
+    val exportContext = androidx.compose.ui.platform.LocalContext.current
+    val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/csv"),
+    ) { uri ->
+        if (uri != null) {
+            exportConfirmed = runCatching {
+                exportContext.contentResolver.openOutputStream(uri)?.use { it.write(viewModel.reportCsv().toByteArray()) } != null
+            }.getOrDefault(false)
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.statusBarsPadding(),
@@ -86,16 +99,7 @@ fun DueListScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(40.dp).background(Accent.copy(alpha = 0.10f), CircleShape).clickable(onClick = onBack),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Accent, modifier = Modifier.size(20.dp))
-                }
-                Spacer(Modifier.width(12.dp))
-                SectionLabel("Due list & planner", color = Accent)
-            }
+            ScreenHeader("Due list & planner", Accent, onBack = onBack)
         }
 
         item {
@@ -140,15 +144,7 @@ fun DueListScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         DueFilter.entries.forEach { f ->
-                            val selected = filter == f
-                            Box(
-                                Modifier
-                                    .background(if (selected) Accent else Brand.Line.copy(alpha = 0.5f), CircleShape)
-                                    .clickable { viewModel.setFilter(f) }
-                                    .padding(horizontal = 14.dp, vertical = 6.dp),
-                            ) {
-                                Text(f.label, style = MaterialTheme.typography.labelSmall, color = if (selected) Brand.Paper else Brand.Ink)
-                            }
+                            org.polycare.app.ui.components.ChoiceChip(f.label, selected = filter == f, onClick = { viewModel.setFilter(f) }, accent = Accent)
                         }
                     }
                 }
@@ -211,7 +207,7 @@ fun DueListScreen(
                     MonthlyReportCard(
                         report = report,
                         exportConfirmed = exportConfirmed,
-                        onExport = { exportConfirmed = true },
+                        onExport = { exportLauncher.launch("asha-monthly-report.csv") },
                     )
                 }
             }
@@ -232,12 +228,13 @@ private fun SummaryCard(label: String, value: String, accent: Color, modifier: M
 private fun TabChip(label: String, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
     Box(
         modifier
+            .heightIn(min = 48.dp)
             .background(if (active) Accent else Color.Transparent, MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
+            .selectable(selected = active, role = androidx.compose.ui.semantics.Role.Tab, onClick = onClick)
+            .padding(horizontal = 4.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = if (active) Brand.Paper else Brand.Ink)
+        Text(label, style = MaterialTheme.typography.labelLarge, color = if (active) Brand.Paper else Brand.Ink, maxLines = 2)
     }
 }
 
@@ -253,7 +250,7 @@ private fun DueItemCard(
     var flagRisk by remember { mutableStateOf(isHighRisk) }
 
     GlassCard(
-        Modifier.fillMaxWidth().clickable(onClick = onToggle),
+        Modifier.fillMaxWidth().clickable(onClickLabel = if (expanded) "Collapse visit" else "Open visit", role = androidx.compose.ui.semantics.Role.Button, onClick = onToggle),
         accent = if (isHighRisk) Brand.Rose else Accent,
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -289,31 +286,17 @@ private fun DueItemCard(
 
             SectionLabel("Record visit observations", color = Accent)
             Spacer(Modifier.height(8.dp))
-            LabelledField("Visit notes (symptoms, advice, vitals)", notes) { notes = it }
+            LabelledField("Visit notes (symptoms, advice, vitals)", notes, singleLine = false) { notes = it }
             Spacer(Modifier.height(10.dp))
 
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { flagRisk = !flagRisk }) {
-                Checkbox(checked = flagRisk, onCheckedChange = { flagRisk = it }, colors = CheckboxDefaults.colors(checkedColor = Brand.Rose))
-                Spacer(Modifier.width(4.dp))
-                Text("Mark as High Risk / Danger sign observed", style = MaterialTheme.typography.bodySmall, color = Brand.Rose)
-            }
+            org.polycare.app.ui.components.ToggleRow("Mark as high risk: danger sign observed", flagRisk, { flagRisk = it }, accent = Brand.Red)
 
-            Spacer(Modifier.height(14.dp))
-            Row(
-                Modifier
-                    .background(Accent, MaterialTheme.shapes.large)
-                    .clickable { onComplete(notes.ifBlank { "Completed scheduled visit" }, flagRisk) }
-                    .padding(horizontal = 18.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Brand.Paper, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "Complete visit & claim ₹${item.visitType.defaultIncentiveRupees}",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = Brand.Paper,
-                )
-            }
+            Spacer(Modifier.height(10.dp))
+            org.polycare.app.ui.components.PrimaryButton(
+                "Complete visit & claim ₹${item.visitType.defaultIncentiveRupees}",
+                onClick = { onComplete(notes.ifBlank { "Completed scheduled visit" }, flagRisk) },
+                icon = Icons.Outlined.CheckCircle, accent = Accent,
+            )
         }
     }
 }
@@ -350,7 +333,7 @@ private fun MonthlyReportCard(
     GlassCard(Modifier.fillMaxWidth(), accent = Brand.Positive) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             SectionLabel("Monthly ASHA Report", color = Brand.Positive)
-            StatusPill("September 2026", dot = Brand.Positive)
+            StatusPill(java.time.LocalDate.now().let { "${it.month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH)} ${it.year}" }, dot = Brand.Positive)
         }
         Spacer(Modifier.height(10.dp))
         Text(
@@ -394,17 +377,15 @@ private fun MonthlyReportCard(
             ) {
                 Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Brand.Positive, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Monthly report exported for Block PHC submission", style = MaterialTheme.typography.titleSmall, color = Brand.Positive)
+                Text("Report saved. Share it at the PHC meeting.", style = MaterialTheme.typography.titleSmall, color = Brand.Positive)
             }
         } else {
-            Row(
-                Modifier
-                    .background(Brand.Positive, MaterialTheme.shapes.large)
-                    .clickable(onClick = onExport)
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-            ) {
-                Text("Export summary for PHC meeting", style = MaterialTheme.typography.titleSmall, color = Brand.Paper)
-            }
+            org.polycare.app.ui.components.PrimaryButton("Export summary for PHC meeting", onExport, accent = Brand.Positive)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Saves a spreadsheet of counts and incentives. It contains no names and no visit notes.",
+                style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted,
+            )
         }
     }
 }

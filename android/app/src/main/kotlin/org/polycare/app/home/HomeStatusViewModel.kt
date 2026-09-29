@@ -7,7 +7,11 @@ import kotlinx.coroutines.launch
 import org.polycare.app.ai.EmbedderProvider
 import org.polycare.app.ai.LlmProvider
 import org.polycare.app.households.HouseholdsRepository
+import org.polycare.app.ai.SkillsRepository
+import org.polycare.app.conflicts.ConflictsRepository
 import org.polycare.app.knowledge.KnowledgeRepository
+import org.polycare.app.radar.SignalsRepository
+import org.polycare.app.sync.SyncRepository
 import org.polycare.governor.DegradationLadder
 import org.polycare.governor.DeviceProbe
 import org.polycare.governor.Rung
@@ -26,7 +30,18 @@ class HomeStatusViewModel @Inject constructor(
     llmProvider: LlmProvider,
     deviceProbe: DeviceProbe,
     households: HouseholdsRepository,
+    signals: SignalsRepository,
+    sync: SyncRepository,
+    conflicts: ConflictsRepository,
+    skills: SkillsRepository,
 ) : ViewModel() {
+    val llm = llmProvider.state
+    val radar = signals.items
+    val syncState = sync.state
+    val pendingOps = sync.pendingOps
+    val conflictList = conflicts.conflicts
+    val skillCount: Int = runCatching { skills.available().size }.getOrDefault(0)
+
     val knowledge = knowledgeRepository.state
     val embedder = embedderProvider.state
     /** Recent visits, newest first — Home's "Recent activity" (replaces cards for Ask/Triage/

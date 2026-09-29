@@ -2,7 +2,26 @@
 
 Live dashboard. Updated after every step; history and reasoning are in [WORKLOG.md](WORKLOG.md).
 
-**Last updated:** 2026-09-29 · **Note:** per direct instruction, this project no longer tracks work against MILESTONES.md (being deleted) — below this line, entries describe what's built and what isn't in plain terms, not milestone numbers. Older entries above/below that still say "M0/M1/M2/M3" are historical record, not a live checklist to keep syncing. · **Test phones:** Xiaomi 2406ERN9CI, Android 16, 6 GB class; Realme RMX2151, Android 12, 6 GB class
+**Last updated:** 2026-09-29 (late) · **Note:** per direct instruction, this project no longer tracks work against MILESTONES.md (being deleted) — below this line, entries describe what's built and what isn't in plain terms, not milestone numbers. Older entries above/below that still say "M0/M1/M2/M3" are historical record, not a live checklist to keep syncing. · **Test phones:** Xiaomi 2406ERN9CI, Android 16, 6 GB class; Realme RMX2151, Android 12, 6 GB class
+
+---
+
+## Latest (2026-09-29 late): sync, radar, conflicts, faster LLM, accessible UI — written, not yet run on the phone
+
+**Nothing below has been run or tested on a phone.** It compiles (`:app:compileDebugKotlin`, native `jni_bridge.cpp`, unit-test sources) and that is all that has been checked.
+
+- **Faster answers.** `jni_bridge.cpp`: KV-cache prefix reuse (the constant system prompt is decoded once, at load, then reused), greedy decoding, and exact **prompt-lookup speculative decoding** (draft up to 8 tokens from the retrieved passage, verify in one batch). The LLM loads and warms at app start. Ask shows tok/s, % predicted, and cached-prompt tokens. Speedup is *unmeasured* — measure with `--ez llm_check true`.
+- **Op-log + encryption.** Every household/member/visit/gap/signal mutation is appended to an fsynced, AES-GCM-sealed op-log first (`sync/OpLogStore.kt`); households store is sealed too (Keystore key, `security/SecureBox.kt`), legacy plaintext migrates on first read.
+- **Sync** (`sync/SyncRepository.kt`, Sync screen): Sync Gate keeps household data local, sends only signals and gaps, "+1" for repeats, chunked, cursor advanced only after the gateway acks; auto-sync after 30 s of steady connection.
+- **Outbreak Radar** (`radar/`, `core-common/.../OutbreakRadar.kt`): Triage can log a de-identified case (danger signs + village + day); cluster detection on the phone and in the gateway.
+- **Conflict Inbox** (`conflicts/`): import/export a teammate's consented-household file, field-level concurrent-edit detection, both values kept, every resolution undoable.
+- **Medicines & counselling cards** (`medicine/`): 15 topics, each a query into the cited knowledge base (no invented clinical text).
+- **Supervisor answers**: gaps sync up; answers written on the dashboard come back and Ask shows them, labelled as team guidance.
+- **Cloud gateway** (`cloud/gateway`, FastAPI + SQLite, optional Qdrant mirror, supervisor dashboard, Docker). Re-checks invariant 7 server-side.
+- **UI accessibility.** Shared controls in `ui/components/Controls.kt` (48 dp targets, roles, labels, live regions), always-labelled bottom bar, real field labels, checkbox rows, real CSV export for the monthly report (counts only, no names/notes), visit dates are real ISO dates.
+- **Build fix (Windows):** a space in the user name broke the NDK link (`clang++` short path). Fixed locally with a junction `C:ndroidsdk` and `android/local.properties` (`sdk.dir=C\:/androidsdk`).
+
+**Known limits:** `usesCleartextTraffic=true` so a LAN gateway works (switch to https + a cert for real deployments); Skill Factory and knowledge slicing are not built; the LoRA skill adapters still have to be trained (`tools/skills/train_skill.py`); demo households are still seeded on first run.
 
 ---
 

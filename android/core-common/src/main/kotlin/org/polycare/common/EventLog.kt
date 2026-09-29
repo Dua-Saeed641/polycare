@@ -10,7 +10,7 @@ package org.polycare.common
 interface EventLog {
     fun record(category: Category, message: String, fields: Map<String, Any?> = emptyMap(), level: Level = Level.INFO)
 
-    enum class Category { APP, DEVICE, MODEL, VECTOR, SEARCH, KNOWLEDGE, BENCHMARK, SYNC, ASK, TRIAGE, GAPS, HOUSEHOLDS }
+    enum class Category { APP, DEVICE, MODEL, VECTOR, SEARCH, KNOWLEDGE, BENCHMARK, SYNC, ASK, TRIAGE, GAPS, HOUSEHOLDS, OPLOG, RADAR, CONFLICTS, TEAM }
 
     enum class Level { INFO, WARN, ERROR }
 

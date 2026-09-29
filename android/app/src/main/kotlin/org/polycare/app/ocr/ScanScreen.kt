@@ -45,10 +45,13 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.polycare.app.ui.components.GlassCard
+import org.polycare.app.ui.components.ScreenHeader
 import org.polycare.app.ui.components.Hairline
 import org.polycare.app.ui.components.LabelledField
 import org.polycare.app.ui.components.SectionLabel
 import org.polycare.app.ui.components.StatusPill
+import org.polycare.app.ui.components.PrimaryButton
+import org.polycare.app.ui.components.ToggleRow
 import org.polycare.app.ui.theme.Brand
 
 @Composable
@@ -79,16 +82,7 @@ fun ScanScreen(
             .padding(contentPadding)
             .padding(horizontal = 20.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(40.dp).background(Brand.Positive.copy(alpha = 0.10f), CircleShape).clickable(onClick = onBack),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Brand.Positive, modifier = Modifier.size(20.dp))
-            }
-            Spacer(Modifier.width(12.dp))
-            SectionLabel("Scan", color = Brand.Positive)
-        }
+        ScreenHeader("Scan", Brand.Positive, onBack = onBack)
 
         Spacer(Modifier.height(20.dp))
         Text("MCP cards & reports", style = MaterialTheme.typography.displaySmall, color = Brand.Ink)
@@ -116,7 +110,7 @@ fun ScanScreen(
                 CircularProgressIndicator(Modifier.size(22.dp), color = Brand.Plum, strokeWidth = 2.dp)
             }
             is ScanUi.Failed -> GlassCard(Modifier.fillMaxWidth()) {
-                Text(state.reason, style = MaterialTheme.typography.titleMedium, color = Brand.Rose)
+                Text(state.reason, style = MaterialTheme.typography.titleMedium, color = Brand.Red)
             }
             is ScanUi.Done -> {
                 McpConfirmationCard(
@@ -136,7 +130,7 @@ fun ScanScreen(
 
 @Composable
 private fun ActionButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier, onClick: () -> Unit) {
-    GlassCard(modifier.clickable(onClick = onClick), padding = 18.dp) {
+    GlassCard(modifier.clickable(onClickLabel = label, role = androidx.compose.ui.semantics.Role.Button, onClick = onClick), padding = 18.dp) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
             Box(Modifier.size(40.dp).background(Brand.PinkMist, MaterialTheme.shapes.small), contentAlignment = Alignment.Center) {
                 Icon(icon, contentDescription = null, tint = Brand.Plum, modifier = Modifier.size(20.dp))
@@ -176,23 +170,12 @@ private fun McpConfirmationCard(
         Spacer(Modifier.height(10.dp))
         LabelledField("Village / Area", village) { village = it }
         Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LabelledField("Age", age, modifier = Modifier.weight(0.35f), keyboardType = KeyboardType.Number) {
-                age = it.filter(Char::isDigit)
-            }
-            LabelledField("Clinical Notes / Rx", notes, modifier = Modifier.weight(0.65f)) { notes = it }
-        }
+        LabelledField("Age", age, keyboardType = KeyboardType.Number) { age = it.filter(Char::isDigit) }
+        Spacer(Modifier.height(10.dp))
+        LabelledField("Clinical notes / Rx", notes, singleLine = false) { notes = it }
 
         Spacer(Modifier.height(12.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { consent = !consent }) {
-            Checkbox(checked = consent, onCheckedChange = { consent = it }, colors = CheckboxDefaults.colors(checkedColor = Brand.Positive))
-            Spacer(Modifier.width(4.dp))
-            Text(
-                "Family gave verbal consent to store this health record on device",
-                style = MaterialTheme.typography.bodySmall,
-                color = Brand.Ink,
-            )
-        }
+        ToggleRow("Family gave verbal consent to store this health record on this phone", consent, { consent = it }, accent = Brand.Positive)
 
         Spacer(Modifier.height(14.dp))
         if (saved) {
@@ -209,19 +192,14 @@ private fun McpConfirmationCard(
             }
         } else {
             val canSave = name.isNotBlank() && village.isNotBlank() && consent
-            Row(
-                Modifier
-                    .background(if (canSave) Brand.Positive else Brand.Line, MaterialTheme.shapes.large)
-                    .clickable(enabled = canSave) {
-                        onSave(name, village, consent, age.toIntOrNull(), notes.ifBlank { null })
-                    }
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-            ) {
-                Text("Save to Households", style = MaterialTheme.typography.titleSmall, color = if (canSave) Brand.Paper else Brand.InkMuted)
-            }
+            PrimaryButton(
+                "Save to Households",
+                onClick = { onSave(name, village, consent, age.toIntOrNull(), notes.ifBlank { null }) },
+                enabled = canSave, accent = Brand.Positive,
+            )
             if (name.isNotBlank() && village.isNotBlank() && !consent) {
                 Spacer(Modifier.height(8.dp))
-                Text("Consent is required before saving to household memory.", style = MaterialTheme.typography.labelSmall, color = Brand.Rose)
+                Text("Consent is required before saving to household memory.", style = MaterialTheme.typography.labelSmall, color = Brand.Red)
             }
         }
     }

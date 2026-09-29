@@ -34,6 +34,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.polycare.app.log.ActivityCard
 import org.polycare.app.ui.components.GlassCard
+import org.polycare.app.ui.components.PrimaryButton
+import org.polycare.app.ui.components.ScreenHeader
 import org.polycare.app.ui.components.Hairline
 import org.polycare.app.ui.components.MetricRow
 import org.polycare.app.ui.components.SectionLabel
@@ -68,16 +70,8 @@ fun DeviceCheckScreen(
             .padding(contentPadding)
             .padding(horizontal = 20.dp),
     ) {
-        Spacer(Modifier.height(24.dp))
-        Box(
-            Modifier.size(36.dp).clip(CircleShape).background(Brand.Glass).clickable(onClick = onMenu),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(Icons.Outlined.Menu, contentDescription = "Menu", tint = Brand.Ink, modifier = Modifier.size(18.dp))
-        }
-        Spacer(Modifier.height(16.dp))
-        SectionLabel("System", color = Brand.Plum)
-        Spacer(Modifier.height(10.dp))
+        ScreenHeader("System", Brand.Plum, onMenu = onMenu)
+        Spacer(Modifier.height(12.dp))
         Text("How this phone runs PolyCare", style = MaterialTheme.typography.displaySmall, color = Brand.Ink)
 
         Spacer(Modifier.height(28.dp))
@@ -207,21 +201,13 @@ private fun VectorEngineCard(state: BenchState, onRun: (Int) -> Unit) {
         val enabled = state !is BenchState.Running
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             listOf(10_000, 100_000).forEach { n ->
-                BenchButton(if (n >= 1000) "${n / 1000}K POINTS" else "$n", enabled) { onRun(n) }
+                BenchButton("Run ${if (n >= 1000) "${n / 1000}K" else "$n"} points", enabled, Modifier.weight(1f)) { onRun(n) }
             }
         }
     }
 }
 
 @Composable
-private fun BenchButton(label: String, enabled: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .clip(CircleShape)
-            .background(if (enabled) Brand.Plum else Brand.Line)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 10.dp),
-    ) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = Brand.Paper)
-    }
+private fun BenchButton(label: String, enabled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    PrimaryButton(label, onClick, modifier, enabled = enabled)
 }

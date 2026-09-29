@@ -17,6 +17,8 @@ import org.polycare.app.ai.WhisperProvider
 import org.polycare.app.knowledge.GapsRepository
 import org.polycare.app.knowledge.KnowledgeHit
 import org.polycare.app.knowledge.KnowledgeRepository
+import org.polycare.app.team.TeamAnswer
+import org.polycare.app.team.TeamGuidanceRepository
 import org.polycare.common.EventLog
 import org.polycare.common.EventLog.Category
 import org.polycare.common.EventLog.Level
@@ -50,9 +52,16 @@ sealed interface AskUi {
         val tokensPerSecond: Double? = null,
         /** Which trained skill answered, if any (ARCHITECTURE.md §5.1); null means base model. */
         val skill: String? = null,
+        /** Share of speculatively drafted tokens the model confirmed (0..1), null if none were drafted. */
+        val draftAcceptance: Double? = null,
+        /** Prompt tokens served from the KV cache instead of being recomputed. */
+        val cachedPromptTokens: Int = 0,
+        val promptMs: Long? = null,
+        /** A supervisor's answer to this same question, received through sync. */
+        val teamAnswer: TeamAnswer? = null,
     ) : AskUi
 
-    data class NoAnswer(val gapLogged: Boolean) : AskUi
+    data class NoAnswer(val gapLogged: Boolean, val teamAnswer: TeamAnswer? = null) : AskUi
     data class Unavailable(val reason: String) : AskUi
 }
 
@@ -69,6 +78,7 @@ class AskViewModel @Inject constructor(
     private val llm: LlmProvider,
     private val skillRouter: SkillRouter,
     private val whisper: WhisperProvider,
+    private val teamGuidance: TeamGuidanceRepository,
     @ApplicationContext private val context: Context,
     private val events: EventLog,
 ) : ViewModel() {
@@ -134,20 +144,21 @@ class AskViewModel @Inject constructor(
             _ui.value = AskUi.Asking
             val result = knowledge.search(value)
             val top = result?.hits?.firstOrNull()
+            val team = teamGuidance.find(value)
             if (top == null) {
-                gaps.log(value, 0f)
-                _ui.value = AskUi.NoAnswer(gapLogged = true)
+                if (team == null) gaps.log(value, 0f)
+                _ui.value = AskUi.NoAnswer(gapLogged = team == null, teamAnswer = team)
                 return@launch
             }
 
             val confidence = termOverlap(value, top.text)
             val lowConfidence = confidence < PolyCareConfig.Routing.minSkillScore
-            if (lowConfidence) gaps.log(value, confidence)
+            if (lowConfidence && team == null) gaps.log(value, confidence)
             events.record(Category.ASK, "Ask answered", mapOf("confidence" to "%.2f".format(confidence), "lowConfidence" to lowConfidence))
 
             val ready = llm.get()
             if (ready == null) {
-                _ui.value = AskUi.Answered(top, confidence, lowConfidence)
+                _ui.value = AskUi.Answered(top, confidence, gapLogged = lowConfidence && team == null, teamAnswer = team)
                 return@launch
             }
 
@@ -163,7 +174,10 @@ class AskViewModel @Inject constructor(
                 events.record(Category.ASK, "Skill routed", mapOf("skills" to route.weights.joinToString { "${it.id}=%.2f".format(it.scale) }))
             }
 
-            _ui.value = AskUi.Answered(top, confidence, lowConfidence, generating = true, skill = route.label)
+            _ui.value = AskUi.Answered(
+                top, confidence, gapLogged = lowConfidence && team == null,
+                generating = true, skill = route.label, teamAnswer = team,
+            )
             val prompt = PromptFormat.ask(value, top.text, top.title)
             val text = StringBuilder()
             ready.engine.generate(prompt).collect { event ->
@@ -174,13 +188,19 @@ class AskViewModel @Inject constructor(
                     }
                     is GenerationEvent.Done -> {
                         (_ui.value as? AskUi.Answered)?.let {
-                            _ui.value = it.copy(generated = text.toString(), generating = false, tokensPerSecond = event.stats.tokensPerSecond)
+                            _ui.value = it.copy(
+                                generated = text.toString(), generating = false, tokensPerSecond = event.stats.tokensPerSecond,
+                                draftAcceptance = if (event.stats.draftedTokens > 0) event.stats.draftAcceptance else null,
+                                cachedPromptTokens = event.stats.reusedPrefixTokens, promptMs = event.stats.promptMs,
+                            )
                         }
                         events.record(
                             Category.ASK, "LLM explanation generated",
                             mapOf(
                                 "promptTokens" to event.stats.promptTokens, "generatedTokens" to event.stats.generatedTokens,
                                 "tokensPerSecond" to "%.1f".format(event.stats.tokensPerSecond),
+                                "drafted" to event.stats.draftedTokens, "accepted" to event.stats.acceptedTokens,
+                                "cachedPromptTokens" to event.stats.reusedPrefixTokens, "promptMs" to event.stats.promptMs,
                             ),
                         )
                     }

@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.polycare.app.ai.LlmProvider
+import org.polycare.app.households.HouseholdsRepository
+import org.polycare.app.radar.SignalsRepository
+import org.polycare.app.settings.AppSettings
 import org.polycare.app.knowledge.TriageCategory
 import org.polycare.app.knowledge.TriageEngine
 import org.polycare.app.knowledge.TriageResult
@@ -26,6 +29,11 @@ data class TriageUiState(
      *  above is never influenced by this — see invariant 10 and [PromptFormat.triageExplanation]. */
     val aiExplanation: String? = null,
     val generating: Boolean = false,
+    /** Villages of this ASHA's households (plus the one set in Sync), for attaching a radar signal. */
+    val villages: List<String> = emptyList(),
+    val village: String = "",
+    /** True once this exact selection was logged to the Outbreak Radar. */
+    val reported: Boolean = false,
 )
 
 /** M2: danger-sign triage. The decision always comes from [TriageEngine]'s rule table (invariant 10). */
@@ -33,14 +41,41 @@ data class TriageUiState(
 class TriageViewModel @Inject constructor(
     private val llm: LlmProvider,
     private val events: EventLog,
+    private val signals: SignalsRepository,
+    private val households: HouseholdsRepository,
+    private val settings: AppSettings,
 ) : ViewModel() {
-    private val _state = MutableStateFlow(TriageUiState())
+    private val _state = MutableStateFlow(initialState())
     val state: StateFlow<TriageUiState> = _state.asStateFlow()
     private var explanationJob: Job? = null
 
+    private fun initialState(): TriageUiState {
+        val set = settings.village.value
+        val villages = (households.villages() + listOfNotNull(set.ifBlank { null })).distinct().sorted()
+        return TriageUiState(villages = villages, village = set.ifBlank { villages.singleOrNull().orEmpty() })
+    }
+
     fun onCategoryChange(category: TriageCategory) {
         explanationJob?.cancel()
-        _state.value = TriageUiState(category = category, result = TriageEngine.evaluate(category, emptySet()))
+        _state.value = _state.value.let {
+            TriageUiState(category = category, result = TriageEngine.evaluate(category, emptySet()), villages = it.villages, village = it.village)
+        }
+    }
+
+    fun setVillage(v: String) {
+        _state.value = _state.value.copy(village = v, reported = false)
+    }
+
+    /**
+     * Logs this case to the Outbreak Radar as a de-identified signal (danger signs + village + day).
+     * Only ever an explicit tap: nothing is reported automatically.
+     */
+    fun reportToRadar() {
+        val cur = _state.value
+        if (signals.record(cur.category, cur.selected, cur.village)) {
+            settings.setVillage(cur.village)
+            _state.value = cur.copy(reported = true)
+        }
     }
 
     fun toggle(signId: String) {
@@ -48,7 +83,7 @@ class TriageViewModel @Inject constructor(
         val cur = _state.value
         val selected = if (signId in cur.selected) cur.selected - signId else cur.selected + signId
         val result = TriageEngine.evaluate(cur.category, selected)
-        _state.value = cur.copy(selected = selected, result = result, aiExplanation = null, generating = false)
+        _state.value = cur.copy(selected = selected, result = result, aiExplanation = null, generating = false, reported = false)
         // Metadata only: never the specific signs, which could identify a household's situation.
         events.record(Category.TRIAGE, "Triage evaluated", mapOf("category" to cur.category.name, "decision" to result.decision.name))
         explain(result)

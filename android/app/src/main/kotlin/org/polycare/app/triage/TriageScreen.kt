@@ -2,7 +2,6 @@ package org.polycare.app.triage
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,17 +9,21 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Radar
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -30,6 +33,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -38,8 +45,12 @@ import org.polycare.app.knowledge.DangerSign
 import org.polycare.app.knowledge.TriageCategory
 import org.polycare.app.knowledge.TriageDecision
 import org.polycare.app.knowledge.TriageEngine
+import org.polycare.app.ui.components.ChipRow
+import org.polycare.app.ui.components.ChoiceChip
 import org.polycare.app.ui.components.GlassCard
 import org.polycare.app.ui.components.MetricRow
+import org.polycare.app.ui.components.ScreenHeader
+import org.polycare.app.ui.components.SecondaryButton
 import org.polycare.app.ui.components.SectionLabel
 import org.polycare.app.ui.theme.Brand
 
@@ -54,53 +65,38 @@ fun TriageScreen(contentPadding: PaddingValues, onBack: () -> Unit, viewModel: T
             .padding(contentPadding)
             .padding(horizontal = 20.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(40.dp).background(Brand.Rose.copy(alpha = 0.10f), CircleShape).clickable(onClick = onBack),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Brand.Rose, modifier = Modifier.size(20.dp))
-            }
-            Spacer(Modifier.width(12.dp))
-            SectionLabel("Triage", color = Brand.Rose)
-        }
+        ScreenHeader("Triage", Brand.Rose, onBack = onBack)
 
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(12.dp))
         Text("Danger-sign check", style = MaterialTheme.typography.displaySmall, color = Brand.Ink)
+        Spacer(Modifier.height(4.dp))
+        Text("Who is the patient?", style = MaterialTheme.typography.bodyMedium, color = Brand.InkMuted)
 
-        Spacer(Modifier.height(20.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Spacer(Modifier.height(12.dp))
+        ChipRow {
             TriageCategory.entries.forEach { category ->
-                CategoryChip(category.label, selected = state.category == category) { viewModel.onCategoryChange(category) }
+                ChoiceChip(category.label, selected = state.category == category, onClick = { viewModel.onCategoryChange(category) }, accent = Brand.Plum)
             }
         }
 
         Spacer(Modifier.height(20.dp))
         DecisionCard(state.result.decision, state.result.explanation, state.result.sourceTitle, state.aiExplanation, state.generating)
 
+        if (state.selected.isNotEmpty()) {
+            Spacer(Modifier.height(16.dp))
+            RadarCard(state.villages, state.village, state.reported, viewModel::setVillage, viewModel::reportToRadar)
+        }
+
         Spacer(Modifier.height(24.dp))
         SectionLabel("Mark what you see")
         Spacer(Modifier.height(12.dp))
-        GlassCard(Modifier.fillMaxWidth(), padding = 8.dp) {
+        GlassCard(Modifier.fillMaxWidth(), padding = 4.dp) {
             TriageEngine.signs(state.category).forEachIndexed { i, sign ->
-                if (i > 0) androidx.compose.material3.HorizontalDivider(color = Brand.LineSoft)
+                if (i > 0) HorizontalDivider(color = Brand.LineSoft)
                 SignRow(sign, checked = sign.id in state.selected) { viewModel.toggle(sign.id) }
             }
         }
         Spacer(Modifier.height(32.dp))
-    }
-}
-
-@Composable
-private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .clip(MaterialTheme.shapes.medium)
-            .background(if (selected) Brand.Plum else Brand.White)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-    ) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = if (selected) Brand.Paper else Brand.InkMuted)
     }
 }
 
@@ -117,9 +113,10 @@ private fun DecisionCard(
         TriageDecision.REFER_24H -> Brand.Magenta
         TriageDecision.CARE_AT_HOME -> Brand.Positive
     }
-    GlassCard(Modifier.fillMaxWidth(), padding = 20.dp) {
+    // The decision is spoken when it changes, so marking a sign gives immediate feedback to a screen reader.
+    GlassCard(Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }, padding = 20.dp, accent = color) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(10.dp).background(color, CircleShape))
+            Box(Modifier.size(12.dp).background(color, CircleShape))
             Spacer(Modifier.width(10.dp))
             Text(decision.label, style = MaterialTheme.typography.headlineSmall, color = color, fontWeight = FontWeight.Medium)
         }
@@ -131,7 +128,7 @@ private fun DecisionCard(
         when {
             aiExplanation != null -> {
                 Spacer(Modifier.height(10.dp))
-                androidx.compose.material3.HorizontalDivider(color = Brand.LineSoft)
+                HorizontalDivider(color = Brand.LineSoft)
                 Spacer(Modifier.height(10.dp))
                 SectionLabel("In plain words", color = Brand.Plum)
                 Spacer(Modifier.height(6.dp))
@@ -157,23 +154,64 @@ private fun DecisionCard(
     }
 }
 
+/**
+ * Optional, explicit: report this case to the Outbreak Radar as a de-identified signal. Shows
+ * exactly what would be sent so the choice is informed.
+ */
 @Composable
-private fun SignRow(sign: DangerSign, checked: Boolean, onToggle: () -> Unit) {
+private fun RadarCard(villages: List<String>, village: String, reported: Boolean, onVillage: (String) -> Unit, onReport: () -> Unit) {
+    GlassCard(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Radar, contentDescription = null, tint = Brand.Rose, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(10.dp))
+            Text("Help spot outbreaks", style = MaterialTheme.typography.titleSmall, color = Brand.Ink)
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Shares only the danger signs, the village and today's date. No name, no household.",
+            style = MaterialTheme.typography.bodySmall, color = Brand.InkMuted,
+        )
+        if (villages.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            ChipRow { villages.forEach { v -> ChoiceChip(v, selected = v == village, onClick = { onVillage(v) }, accent = Brand.Rose) } }
+        } else {
+            Spacer(Modifier.height(12.dp))
+            org.polycare.app.ui.components.LabelledField("Village", village, onChange = onVillage)
+        }
+        Spacer(Modifier.height(12.dp))
+        if (reported) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics { liveRegion = LiveRegionMode.Polite }, verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Brand.Positive)
+                Spacer(Modifier.width(10.dp))
+                Text("Logged for the Outbreak Radar", style = MaterialTheme.typography.titleSmall, color = Brand.Positive)
+            }
+        } else {
+            SecondaryButton("Log this case for the radar", onReport, enabled = village.isNotBlank(), icon = Icons.Outlined.Radar, accent = Brand.Rose)
+        }
+    }
+}
+
+@Composable
+private fun SignRow(sign: DangerSign, checked: Boolean, onToggle: (Boolean) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 12.dp, vertical = 14.dp),
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .toggleable(value = checked, role = Role.Checkbox, onValueChange = onToggle)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             Modifier
-                .size(22.dp)
+                .size(26.dp)
                 .clip(CircleShape)
                 .background(if (checked) Brand.Plum else Color.Transparent)
-                .border(1.dp, if (checked) Brand.Plum else Brand.Line, CircleShape),
+                .border(1.5.dp, if (checked) Brand.Plum else Brand.InkMuted, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            if (checked) Icon(Icons.Filled.Check, contentDescription = null, tint = Brand.Paper, modifier = Modifier.size(14.dp))
+            if (checked) Icon(Icons.Filled.Check, contentDescription = null, tint = Brand.Paper, modifier = Modifier.size(16.dp))
         }
-        Spacer(Modifier.width(12.dp))
-        Text(sign.label, style = MaterialTheme.typography.bodyMedium, color = Brand.Ink)
+        Spacer(Modifier.width(14.dp))
+        Text(sign.label, style = MaterialTheme.typography.bodyMedium, color = Brand.Ink, modifier = Modifier.weight(1f))
     }
 }

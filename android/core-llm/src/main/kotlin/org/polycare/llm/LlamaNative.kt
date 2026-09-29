@@ -37,13 +37,18 @@ internal object LlamaNative {
 
     external fun setAdapters(handle: Long, loraHandles: LongArray, scales: FloatArray): Boolean
 
-    /** Returns `[promptTokens, generatedTokens, promptMs, decodeMs]`. */
+    /**
+     * Returns `[promptTokens, generatedTokens, promptMs, decodeMs, drafted, accepted, reusedPrefix]`.
+     * `temperature <= 0` selects greedy decoding, which enables prompt-lookup speculation of up to
+     * `maxDraft` tokens per step (0 disables it).
+     */
     external fun generate(
         handle: Long,
         prompt: String,
         maxTokens: Int,
         temperature: Float,
         topP: Float,
+        maxDraft: Int,
         sink: TokenSink,
     ): LongArray
 }

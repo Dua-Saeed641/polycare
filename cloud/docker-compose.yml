@@ -1,0 +1,15 @@
+# cd cloud && docker compose up -d      then open http://localhost:8080 for the supervisor dashboard.
+# On the phone: Sync -> Gateway address -> http://<this computer's LAN IP>:8080
+services:
+  gateway:
+    build: ./gateway
+    ports: ["8080:8080"]
+    environment:
+      POLYCARE_TOKEN: ${POLYCARE_TOKEN:-}
+      SUPERVISOR_TOKEN: ${SUPERVISOR_TOKEN:-}
+      QDRANT_URL: ${QDRANT_URL:-}
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+    volumes: ["gateway-data:/data"]
+    restart: unless-stopped
+volumes:
+  gateway-data:

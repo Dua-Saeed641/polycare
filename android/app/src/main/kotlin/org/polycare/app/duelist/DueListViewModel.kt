@@ -62,6 +62,27 @@ class DueListViewModel @Inject constructor(
         searchNotes("")
     }
 
+    /**
+     * Monthly summary for the PHC meeting as CSV: counts and incentive amounts per visit type, then
+     * one row per visit with its date and type. Deliberately no names and no visit notes.
+     */
+    fun reportCsv(): String {
+        val r = repo.monthlyReport()
+        return buildString {
+            appendLine("Monthly ASHA report")
+            appendLine("visit_type,visits,incentive_rupees")
+            appendLine("ANC,${r.ancCount},${r.ancCount * VisitType.ANC.defaultIncentiveRupees}")
+            appendLine("PNC,${r.pncCount},${r.pncCount * VisitType.PNC.defaultIncentiveRupees}")
+            appendLine("Immunization,${r.immunizationCount},${r.immunizationCount * VisitType.IMMUNIZATION.defaultIncentiveRupees}")
+            appendLine("Family planning,${r.familyPlanningCount},${r.familyPlanningCount * VisitType.FAMILY_PLANNING.defaultIncentiveRupees}")
+            appendLine("High-risk cases identified,${r.highRiskCount},")
+            appendLine("Total,${r.totalVisits},${r.totalIncentiveRupees}")
+            appendLine()
+            appendLine("date,visit_type,high_risk,incentive_rupees")
+            r.visits.forEach { v -> appendLine("${v.date},${v.type.label},${v.highRisk},${v.incentiveRupees}") }
+        }
+    }
+
     fun setFilter(filter: DueFilter) {
         _filter.value = filter
     }

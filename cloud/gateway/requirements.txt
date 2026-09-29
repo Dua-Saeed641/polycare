@@ -1,0 +1,5 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.32,<1
+pydantic>=2.9,<3
+# optional: mirror signal vectors into Qdrant Cloud when QDRANT_URL is set
+qdrant-client>=1.12,<2
