@@ -45,6 +45,7 @@ android {
     }
     packaging {
         jniLibs.pickFirsts += "**/libc++_shared.so"
+        resources.excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
     }
 }
 

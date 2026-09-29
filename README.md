@@ -14,7 +14,7 @@
   <img alt="Jetpack Compose" src="https://img.shields.io/badge/Jetpack%20Compose-Material%203-BC16A6?style=flat-square&logo=jetpackcompose&logoColor=white" />
   <img alt="Qdrant Edge" src="https://img.shields.io/badge/Qdrant-Edge%20%2B%20Cloud-FB2E66?style=flat-square" />
   <img alt="llama.cpp" src="https://img.shields.io/badge/llama.cpp-on--device-F285C6?style=flat-square" />
-  <img alt="Status" src="https://img.shields.io/badge/status-M2%20offline%20assistant-3A0633?style=flat-square" />
+  <img alt="Status" src="https://img.shields.io/badge/status-prototype%20verification%20in%20progress-3A0633?style=flat-square" />
 </p>
 
 <p align="center">
@@ -46,6 +46,12 @@ India's **~1 million ASHA workers** each look after about 1,000 people. They tra
 
 ## Features
 
+> **Project status (2026-09-29):** M0 foundations (9/10; Qdrant Cloud is reachable and its gateway
+> collections are initialized; the knowledge snapshot is still outstanding) and M1 on-device
+> knowledge/search (5/5) have verified results. Android unit tests and debug/test APK builds pass;
+> all 17 gateway tests pass. Live device sync and district workflows remain unverified.
+> See [MILESTONES.md](MILESTONES.md) for the implementation/verification breakdown.
+
 **At the doorstep**
 - **Ask** by voice or text in Hindi or English, fully offline, with sources and a confidence badge
 - **Danger-sign triage**: refer now, refer within 24 h, or care at home
@@ -57,14 +63,13 @@ India's **~1 million ASHA workers** each look after about 1,000 people. They tra
 - **Monthly report** and incentive tracker filled from recorded visits
 
 **Team and district intelligence**
-- **Sync with Qdrant Cloud** whenever a connection appears, resumable and conflict-aware
-- **Gap answering**: questions asked offline are answered by the cloud on the next sync
-- **Outbreak Radar** and a **supervisor dashboard**
-- **Conflict Inbox** when two workers record different details
+- **Sync with Qdrant Cloud**: Android client, gateway and background worker are implemented; live sync is not verified
+- **Gap answering**, **Outbreak Radar** and a **supervisor dashboard**: gateway routes and local tests exist; live district workflows remain unverified
+- **Conflict Inbox**: local conflict detection and resolution UI exists; multi-device convergence is unverified
 
 **Built to be trusted**
-- Always answers: steps down gracefully on low battery, heat or low memory
-- Up to **~1 million knowledge passages** searchable on the phone
+- Degradation ladder and chaos controls are implemented but need device/failure-matrix verification
+- **1,240 knowledge passages** are packaged for offline search; one-million-point performance is not measured
 - Memory Inspector and Activity log show what the phone knows and what synced
 
 ## How it works
@@ -131,11 +136,11 @@ flowchart LR
 
 | Layer | Technologies |
 |---|---|
-| **App** | Kotlin 2, Jetpack Compose, Material 3, Hilt, Coroutines/Flow, Room, WorkManager |
+| **App** | Kotlin 2, Jetpack Compose, Material 3, Hilt, Coroutines/Flow, encrypted local stores, WorkManager |
 | **On-device AI** | llama.cpp (Qwen2.5-0.5B + LoRA skills), whisper.cpp, ONNX Runtime (multilingual-e5-small and PP-OCRv5), PaddleOCR with ML Kit fallback |
-| **Vector search** | Qdrant Edge (on the phone), Qdrant Cloud (sync, radar, knowledge slices) |
-| **Sync & security** | Protobuf, OkHttp, hybrid logical clocks, Android Keystore, Tink (ed25519), SQLCipher |
-| **Cloud** | FastAPI, Qdrant Cloud only for database persistence, Qdrant FastEmbed for shared knowledge; dashboard and cloud AI workflows remain planned |
+| **Vector search** | Qdrant Edge (on the phone), Qdrant Cloud (sync/team prototype; cloud workflows not yet verified) |
+| **Sync & security** | Protobuf, OkHttp, hybrid logical clocks, Android Keystore, Ed25519, encrypted op-log |
+| **Cloud** | FastAPI gateway; **Qdrant Cloud only** for persistence; Qdrant FastEmbed for shared knowledge; team routes pass local tests |
 
 To include offline English and Hindi OCR models in the APK, run `powershell -ExecutionPolicy Bypass -File tools/models/fetch_paddle_ocr_models.ps1` before building. The script verifies pinned SHA-256 digests.
 
@@ -154,7 +159,8 @@ bash ../native/build-qdrant-edge.sh   # first time: builds Qdrant Edge for Andro
 
 Building Qdrant Edge needs Rust (stable ≥ 1.98, target `aarch64-linux-android`), `cargo-ndk` and the Android NDK. On Windows also install MinGW-w64: `winget install BrechtSanders.WinLibs.POSIX.UCRT`.
 
-On Windows use `gradlew.bat`. Model files are downloaded on first run and verified by sha256 before loading.
+On Windows use `gradlew.bat`. Fetch the pinned OCR assets before building using the command above;
+other model/setup requirements are documented in [BUILD_AND_TEST.md](BUILD_AND_TEST.md).
 
 ## Project structure
 
@@ -166,8 +172,8 @@ android/        Kotlin app and core modules
   core-governor/  battery, heat and memory → operating mode
   qdrant-edge/    Qdrant Edge bindings (UniFFI) + VectorStore adapter
 native/         build-qdrant-edge.sh: Qdrant Edge for Android arm64
-cloud/          gateway · workers · skill factory · dashboard      (planned)
-proto/          sync.proto wire format                             (planned)
+cloud/          Qdrant-only gateway, team feature prototypes, skill factory
+proto/          sync.proto wire format
 assets/         banner, logo, Tenor Sans
 ```
 
@@ -175,14 +181,14 @@ assets/         banner, logo, Tenor Sans
 
 | Milestone | Scope | Status |
 |---|---|---|
-| **M0** | Foundations and feasibility checks | 🟣 In progress (5/10) |
-| **M1** | On-device knowledge and hybrid search | 🟣 In progress (4/5) |
-| **M2** | Offline health assistant and triage | 🟣 In progress (2/8, +3 partial) |
-| **M3** | Households, OCR and daily work | ⚪ Planned |
-| **M4–M5** | Evolving memory and conflicts | ⚪ Planned |
-| **M6** | Sync with Qdrant Cloud | ⚪ Planned |
-| **M7** | Outbreak Radar, gap answering, knowledge slicing | ⚪ Planned |
-| **M8–M10** | A million points on the phone, reliability, complete product | ⚪ Planned |
+| **M0** | Foundations and feasibility checks | 9/10 verified; knowledge snapshot remains |
+| **M1** | On-device knowledge and hybrid search | 5/5 verified |
+| **M2** | Offline health assistant and triage | Core flows verified; voice/speculative paths partial |
+| **M3** | Households, OCR and daily work | Implemented; new OCR/persistence paths need device verification |
+| **M4–M5** | Evolving memory and conflicts | Partial implementation; recovery/convergence tests missing |
+| **M6** | Sync with Qdrant Cloud | Client/server code exists; local tests pass; live device sync unverified |
+| **M7** | Outbreak Radar, gap answering, knowledge slicing | Routes/tests pass locally; live workflows unverified; slicing not implemented |
+| **M8–M10** | Scale, reliability and complete product | Scale not implemented; reliability/product remain in progress |
 
 Full checklist in [MILESTONES.md](MILESTONES.md).
 

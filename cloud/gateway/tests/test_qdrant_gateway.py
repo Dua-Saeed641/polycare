@@ -21,7 +21,7 @@ class QdrantGatewayTests(unittest.TestCase):
         self.env = patch.dict(os.environ, {
             "QDRANT_URL": "https://qdrant.example", "QDRANT_API_KEY": "q" * 24,
             "POLYCARE_ENROLLMENT_TOKEN": "e" * 48, "POLYCARE_TOKEN_SECRET": "t" * 48,
-            "POLYCARE_KNOWLEDGE_TOKEN": "k" * 48,
+            "POLYCARE_KNOWLEDGE_TOKEN": "k" * 48, "POLYCARE_SUPERVISOR_TOKEN": "s" * 48,
         })
         self.env.start()
         self.qdrant_patch = patch.object(main, "QdrantClient", return_value=self.db)
@@ -107,6 +107,29 @@ class QdrantGatewayTests(unittest.TestCase):
         self.assertEqual(searched.status_code, 200, searched.text)
         self.assertEqual(searched.json()["results"][0]["document_id"], "anc")
         self.assertEqual(self.db.count("knowledge").count, 1)
+
+    def test_team_routes_require_auth_and_deliver_supervisor_answer_and_guidance(self):
+        self.assertEqual(self.client.get("/v1/answers").status_code, 401)
+        supervisor = {"X-Supervisor-Token": "s" * 48}
+        published = self.client.post("/v1/supervisor/answers", headers=supervisor, json={
+            "question": "How much ORS should I give?", "answer": "Follow the packet instructions.",
+        })
+        self.assertEqual(published.status_code, 201, published.text)
+        pulled = self.client.get("/v1/answers", headers=self.headers)
+        self.assertEqual(pulled.status_code, 200, pulled.text)
+        self.assertEqual(pulled.json()["answers"][0]["question"], "How much ORS should I give?")
+
+        guidance = self.client.post("/v1/supervisor/guidance", headers=supervisor, json={
+            "title": "Village advisory", "body": "Contact the health centre.", "villages": ["village_17"],
+        })
+        self.assertEqual(guidance.status_code, 201, guidance.text)
+        received = self.client.get("/v1/guidance?village_code=village_17", headers=self.headers)
+        self.assertEqual(received.status_code, 200, received.text)
+        self.assertEqual([card["title"] for card in received.json()["cards"]], ["Village advisory"])
+
+        merkle = self.client.get("/v1/merkle", headers=self.headers)
+        self.assertEqual(merkle.status_code, 200, merkle.text)
+        self.assertEqual(len(merkle.json()["children"]), 16)
 
 
 if __name__ == "__main__":

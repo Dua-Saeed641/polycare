@@ -291,6 +291,12 @@ Surveyed what's actually missing before picking the next task, rather than assum
 - Added PaddleOCR's Apache-2.0 Android ONNX SDK from upstream revision `dab3fe35379033fdcb2d0e9572fac0b36c9a9ebf`, with OpenCV 4.5.3. `OcrEngine` uses PP-OCRv5 when all model assets are present, separately runs Latin and Devanagari recognizers, keeps the initialized engines for reuse, and reports the active engine in Scan. ML Kit remains a fallback.
 - Added immutable HF model revisions + SHA-256 pins and `tools/models/fetch_paddle_ocr_models.ps1`; verified all six assets. Debug APK contains the model and configuration assets. Added an instrumented bilingual scan of the synthetic MCP card and successfully compiled `:app:assembleDebugAndroidTest`.
 - Integrated FastEmbed multilingual MiniLM as separate shared-knowledge ingestion and search routes. Verified the model registry dimension (384), ran actual English passage/query embeddings through FastEmbed ONNX (both finite 384d), and added Qdrant in-memory API coverage.
+
+## 2026-09-29 — Gateway router repair and live Qdrant verification
+
+- Rebuilt `app.team.build_router` and its missing dependencies. The previous function recursively called itself, while route handlers referenced undefined router/helper names. Added local endpoint integration coverage for supervisor answers, authenticated answer pulls, village-scoped guidance, and Merkle tree access.
+- All 17 gateway tests pass and `uv lock --check` passes. Added the seven expected empty collections to the supplied Qdrant Cloud cluster through the gateway lifespan.
+- Live `/healthz`, `/v1/radar/alerts`, and `/v1/supervisor/stats` requests returned 200. The cluster has no application records yet. No Android device enrollment, signed operation push, populated radar alert, or two-phone sync was exercised.
 - Fixed the canonical operation signature encoding discovered by the new integration test: previous-hash bytes are lowercase hex in the signed canonical JSON, base64 only on REST. Qdrant payload-only collections now hold auth/devices/sync ops without dummy vectors; signals/knowledge alone carry actual embeddings.
 - Checks: 9 gateway tests pass; `uv lock --check` passes; full Android unit `test` passes; debug APK and Android instrumentation APK assemble. OCR instrumentation has not been run on a handset because ADB/platform-tools and a connected device are absent from this environment. Qdrant Cloud live integration remains blocked on project credentials.
 

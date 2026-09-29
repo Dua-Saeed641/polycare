@@ -1,10 +1,24 @@
 # PolyCare — Status
 
-Live dashboard. Updated after every step; history and reasoning are in [WORKLOG.md](WORKLOG.md).
+Detailed implementation log; the live completion overview is in [MILESTONES.md](MILESTONES.md). History and reasoning are in [WORKLOG.md](WORKLOG.md).
 
-**Last updated:** 2026-09-29 (late) · **Note:** per direct instruction, this project no longer tracks work against MILESTONES.md (being deleted) — below this line, entries describe what's built and what isn't in plain terms, not milestone numbers. Older entries above/below that still say "M0/M1/M2/M3" are historical record, not a live checklist to keep syncing. · **Test phones:** Xiaomi 2406ERN9CI, Android 16, 6 GB class; Realme RMX2151, Android 12, 6 GB class
+**Last updated:** 2026-09-29 (late) · MILESTONES.md is the live completion overview. This file retains implementation detail; older milestone references are historical. · **Test phones:** Xiaomi 2406ERN9CI, Android 16, 6 GB class; Realme RMX2151, Android 12, 6 GB class
 
 ---
+
+## Latest verification: Qdrant gateway and live cluster
+
+- Repaired `cloud/gateway/app/team.py`: restored `build_router`, the device-or-supervisor dependency,
+  pagination helpers, and the gap-answer, radar, Merkle, guidance, vote, and dashboard routes.
+- Added an in-memory integration test for supervisor answers, authenticated answer retrieval,
+  village-filtered guidance, and Merkle route construction. All **17 gateway tests pass**; `uv lock --check` passes.
+- Verified the live cluster from gateway startup. It now contains the seven empty collections the
+  gateway expects: `answers`, `auth_challenges`, `devices`, `guidance`, `knowledge`, `signals`, and
+  `sync_ops`.
+- Live `/healthz`, `/v1/radar/alerts`, and `/v1/supervisor/stats` requests returned 200. The cluster
+  is empty (zero devices, signals, gaps, or answers); phone enrollment/sync and populated radar flows
+  still need end-to-end verification.
+- The Android unit tests and debug/test APK builds passed earlier; instrumentation still needs a handset.
 
 ## Latest (2026-09-29 late): merged with the OCR/sync-gateway work; phone sync client, radar, conflicts, faster LLM, accessible UI. Written, not yet run on a phone.
 
@@ -41,7 +55,7 @@ Live dashboard. Updated after every step; history and reasoning are in [WORKLOG.
 - **Households/Members/Visits/DueItems now persist locally** — first introduced as app-private JSON, then upgraded to authenticated AES-GCM ciphertext in no-backup storage using an Android Keystore key. A legacy plaintext file migrates only after the encrypted replacement is atomically written. Sequential writes fixed a real lost-update race; encryption migration still needs physical-device verification. Full detail in WORKLOG.
 - **UI correction:** the glass-card/orb-background look was right all along — the actual complaint was that the *animated* version was heavy (a 24-second infinite-loop redraw on every screen, real CPU/battery cost). Reverted to the original translucent glass cards and orbs, but drawn once, statically, instead of animated. Also: removed Ask/Triage/Search from Home's tile grid (redundant with the bottom nav), replaced with a real "Recent activity" feed of logged visits, and removed the "Offline ready" pill per direct instruction. Kept the tighter corner radii and rounded-square icon badges from the earlier pass (not complained about).
 - **LLM swapped from Qwen2.5-1.5B to Qwen2.5-0.5B-Instruct.** Measured on-device (`--ez llm_check true`): **17.50 tok/s decode** (was 4.00-5.42 tok/s — a ~3.5x speedup), load time 3.6s (was 6-8.6s). Quality check: the same grounded test question ("How many antenatal check-ups...") still answered correctly and coherently. Old 1.5B GGUF kept on disk unused, not deleted.
-- **Per direct instruction, this project stops tracking against MILESTONES.md** (being deleted). Entries here describe features in plain terms, not milestone numbers.
+- **Historical note:** milestone tracking was paused at this point; it has since been restored as the live completion overview by the latest project direction.
 - **2026-09-29 completion audit:** the Android debug APK builds from a clean tree (`:app:assembleDebug`, including native llama/whisper and Kotlin compilation). Reviewed the new query cache and fixed its key generation: query results now vary by query, knowledge version, and result limit; persisted embeddings vary by query and embedder model. Restored the zip-slip rejection detail. Removed a forced `armv8.2-a+dotprod` native target because supported phones do not guarantee that CPU feature. Vulkan remains disabled; GPU acceleration and the claimed speedups are not implemented or verified. The debug build is compile-verified, but no test suite or live-phone run was performed in this audit.
 - **Household data protection:** replaced plaintext writes with AES-GCM ciphertext under a non-exportable Android Keystore key in `noBackupFilesDir`. Existing plaintext JSON is migrated only after an atomic encrypted write succeeds. If existing data cannot be decrypted or parsed, the repository warns and refuses to seed/overwrite it. Physical-device migration/recovery verification remains outstanding.
 - **OCR now uses PaddleOCR PP-OCRv5 as the primary engine.** Added the Apache-2.0 upstream Android ONNX SDK, SHA-256-pinned PP-OCRv5 detector + Latin + Devanagari models, and a bilingual offline instrumented test. ML Kit is a fallback. The debug APK contains all six model/config assets and is 251 MB; phone accuracy, memory, and latency still need measurement because no ADB device is available here.
@@ -49,7 +63,7 @@ Live dashboard. Updated after every step; history and reasoning are in [WORKLOG.
 
 ---
 
-## Milestones (historical — see note above; not maintained as a live checklist any more)
+## Milestones (historical snapshot; the live checklist is maintained in MILESTONES.md)
 
 | Milestone | Progress | State |
 |---|---|---|
