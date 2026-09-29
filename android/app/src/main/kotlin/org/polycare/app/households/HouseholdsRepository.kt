@@ -17,6 +17,9 @@ import org.polycare.common.Hlc
 import org.polycare.common.HlcClock
 import org.polycare.common.UuidV7
 import java.io.File
+import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -112,13 +115,10 @@ data class VisitSearchResult(
  * "Due list and visit planner", "Visit notes searchable by meaning", "Monthly report and
  * incentive tracker").
  *
- * Persisted as a plain JSON file in app-private storage (`files/households_store.json`) — not
- * the op-log architecture invariant 1 describes for `households` (that needs the op-log itself,
- * which doesn't exist yet), but real persistence, not nothing: an ASHA worker's registered
- * households surviving an app restart is a correctness requirement on its own, independent of
- * which storage mechanism eventually backs it. When the op-log lands, this file format goes
- * away in favour of replaying ops; until then, losing every household on a restart would be a
- * much bigger problem than which storage engine wrote the file.
+ * Persisted as authenticated AES-GCM ciphertext in app-private no-backup storage. The key is
+ * non-exportable and held by Android Keystore. A legacy plaintext file is migrated only after
+ * the encrypted replacement has been atomically written. This file is a persistence bridge, not
+ * the op-log architecture invariant 1 describes; the op-log is still future work.
  * Invariant 7: personal health records never leave the phone. Nothing here is ever placed in an
  * outbox — this file is never touched by anything sync-related.
  */
@@ -156,7 +156,10 @@ class HouseholdsRepository internal constructor(
     // later one silently loses the later update. limitedParallelism(1) makes writes strictly
     // sequential, in call order, so the last call to persist() always wins on disk.
     private val writeDispatcher = Dispatchers.IO.limitedParallelism(1)
-    private val storeFile: File? = context?.let { File(it.filesDir, "households_store.json") }
+    private val storeFile: File? = context?.let { File(it.noBackupFilesDir, "households_store.enc") }
+    private val legacyStoreFile: File? = context?.let { File(it.filesDir, "households_store.json") }
+    private val storeCipher = if (context != null) HouseholdStoreCipher() else null
+    @Volatile private var storageHealthy = true
 
     private val _households = MutableStateFlow<List<Household>>(emptyList())
     val households: StateFlow<List<Household>> = _households.asStateFlow()
@@ -170,8 +173,20 @@ class HouseholdsRepository internal constructor(
     private val _dueItems = MutableStateFlow<List<DueItem>>(emptyList())
     val dueItems: StateFlow<List<DueItem>> = _dueItems.asStateFlow()
 
+    private val _storageWarning = MutableStateFlow<String?>(null)
+    val storageWarning: StateFlow<String?> = _storageWarning.asStateFlow()
+
     init {
-        if (!loadFromDisk()) seedInitialDataIfEmpty()
+        if (!loadFromDisk()) {
+            val hasExistingStore = storeFile?.exists() == true || legacyStoreFile?.exists() == true
+            if (hasExistingStore) {
+                // Never seed over data that could not be decrypted or parsed.
+                storageHealthy = false
+                _storageWarning.value = "Saved household records could not be opened. Changes will not be saved on this device."
+            } else {
+                seedInitialDataIfEmpty()
+            }
+        }
     }
 
     private fun seedInitialDataIfEmpty() {
@@ -425,6 +440,7 @@ class HouseholdsRepository internal constructor(
 
     private fun persist() {
         val file = storeFile ?: return
+        if (!storageHealthy) return
         val snapshot = JSONObject().apply {
             put("households", JSONArray(_households.value.map { it.toJson() }))
             put("members", JSONArray(_members.value.map { it.toJson() }))
@@ -432,21 +448,54 @@ class HouseholdsRepository internal constructor(
             put("dueItems", JSONArray(_dueItems.value.map { it.toJson() }))
         }
         scope.launch(writeDispatcher) {
-            runCatching { file.writeText(snapshot.toString()) }
-                .onFailure { events.record(Category.HOUSEHOLDS, "Failed to persist households store", mapOf("error" to it.javaClass.simpleName), EventLog.Level.ERROR) }
+            runCatching {
+                val encrypted = requireNotNull(storeCipher).encrypt(snapshot.toString().toByteArray(Charsets.UTF_8))
+                val tmp = File(file.parentFile, file.name + ".tmp")
+                FileOutputStream(tmp).use { stream ->
+                    stream.write(encrypted)
+                    stream.fd.sync()
+                }
+                Files.move(
+                    tmp.toPath(),
+                    file.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+                // Remove the old plaintext copy only after the encrypted write is durable.
+                if (legacyStoreFile?.exists() == true && !legacyStoreFile.delete()) {
+                    _storageWarning.value = "Records are encrypted, but an older plaintext copy could not be removed."
+                } else {
+                    _storageWarning.value = null
+                }
+            }
+                .onFailure {
+                    _storageWarning.value = "Household changes could not be saved securely on this device."
+                    events.record(Category.HOUSEHOLDS, "Failed to persist households store", mapOf("error" to it.javaClass.simpleName), EventLog.Level.ERROR)
+                }
         }
     }
 
     /** Returns true if a persisted store was found and loaded (skips demo-data seeding). */
     private fun loadFromDisk(): Boolean {
-        val file = storeFile ?: return false
-        if (!file.exists()) return false
+        val encryptedFile = storeFile ?: return false
+        val legacyFile = legacyStoreFile
+        if (!encryptedFile.exists() && legacyFile?.exists() != true) return false
         return runCatching {
-            val root = JSONObject(file.readText())
+            val plaintext = if (encryptedFile.exists()) {
+                requireNotNull(storeCipher).decrypt(encryptedFile.readBytes())
+            } else {
+                requireNotNull(legacyFile).readBytes()
+            }
+            val root = JSONObject(String(plaintext, Charsets.UTF_8))
             _households.value = root.getJSONArray("households").toObjectList(::householdFromJson)
             _members.value = root.getJSONArray("members").toObjectList(::memberFromJson)
             _visits.value = root.getJSONArray("visits").toObjectList(::visitFromJson)
             _dueItems.value = root.getJSONArray("dueItems").toObjectList(::dueItemFromJson)
+            if (!encryptedFile.exists()) {
+                persist()
+            } else if (legacyFile?.exists() == true && !legacyFile.delete()) {
+                _storageWarning.value = "Records are encrypted, but an older plaintext copy could not be removed."
+            }
             true
         }.getOrElse {
             events.record(Category.HOUSEHOLDS, "Failed to load persisted households store", mapOf("error" to it.javaClass.simpleName), EventLog.Level.ERROR)

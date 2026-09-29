@@ -9,6 +9,7 @@ import javax.inject.Inject
 class HouseholdsViewModel @Inject constructor(private val repo: HouseholdsRepository) : ViewModel() {
     val households: StateFlow<List<Household>> = repo.households
     val members: StateFlow<List<Member>> = repo.members
+    val storageWarning: StateFlow<String?> = repo.storageWarning
 
     fun addHousehold(headOfHousehold: String, village: String, consentGiven: Boolean): Boolean {
         if (headOfHousehold.isBlank() || village.isBlank()) return false

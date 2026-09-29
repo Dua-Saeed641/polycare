@@ -1,0 +1,18 @@
+services:
+  gateway:
+    build:
+      context: ./gateway
+    environment:
+      QDRANT_URL: ${QDRANT_URL:?set QDRANT_URL in cloud/.env}
+      QDRANT_API_KEY: ${QDRANT_API_KEY:?set QDRANT_API_KEY in cloud/.env}
+      POLYCARE_ENROLLMENT_TOKEN: ${POLYCARE_ENROLLMENT_TOKEN:?set POLYCARE_ENROLLMENT_TOKEN in cloud/.env}
+      POLYCARE_TOKEN_SECRET: ${POLYCARE_TOKEN_SECRET:?set POLYCARE_TOKEN_SECRET in cloud/.env}
+      POLYCARE_KNOWLEDGE_TOKEN: ${POLYCARE_KNOWLEDGE_TOKEN:?set POLYCARE_KNOWLEDGE_TOKEN in cloud/.env}
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5)"]
+      interval: 15s
+      timeout: 6s
+      retries: 5
+    restart: unless-stopped

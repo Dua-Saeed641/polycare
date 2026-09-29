@@ -29,7 +29,7 @@
 |---|---|---|
 | UI | Kotlin 2, Jetpack Compose, Material 3, Hilt, StateFlow | Ask, Triage, Scan, Households, Due List, Skills Shelf, Memory Inspector, Sync & Activity, Conflict Inbox, Chaos Panel |
 | Speech-to-text | whisper.cpp multilingual (`base` / `small` q5) via JNI; IndicConformer as candidate | Push-to-talk in Hindi and English, fully offline |
-| OCR | Google ML Kit Text Recognition v2 (Latin + Devanagari, bundled models) + ML Kit Document Scanner | MCP cards, lab reports, prescriptions, medicine strips, register pages |
+| OCR | PaddleOCR PP-OCRv5 ONNX Android SDK (Apache-2.0; Latin + Devanagari models), ML Kit fallback | Offline MCP cards, lab reports, prescriptions, medicine strips, register pages |
 | Field extractor | Base LLM in grammar-constrained JSON mode + regex rules | OCR text → structured fields (BP, Hb, EDD, dose, expiry) |
 | Dense embedder | ONNX Runtime Mobile, `multilingual-e5-small` int8 (384-d) | Query + document embeddings (Hindi + English), stamped with `model_id` |
 | Sparse encoder | BM25 tokenizer (Kotlin, Indic-aware normalisation) → Qdrant sparse vector | Exact hits on drug names, IDs, lab values |
@@ -56,9 +56,9 @@
 |---|---|---|
 | Vector DB | **Qdrant Cloud** (managed Qdrant Server) | `fleet_memory`, `knowledge_atlas`, `skill_registry`, `draft_corpus`, `knowledge_gaps`, `signals`, `radar_regions`, `atlas` |
 | Edge Gateway | FastAPI, Python 3.12, Uvicorn, Pydantic v2, `qdrant-client` | Device auth, op verify/dedupe, privacy enforcement, Merkle, pull, gaps, skills, knowledge slices |
-| Relational DB | PostgreSQL 16 | Devices & keys, global op-log, HLC watermarks, tombstones + acks, skill versions |
+| Cloud persistence | **Qdrant Cloud only** | Payload-only collections for devices, challenges, signed ops and sync metadata; vector collections for approved signals, knowledge and skills |
 | Object storage | MinIO / S3 | Adapter GGUF blobs, Qdrant partial snapshots, signed manifests |
-| Job queue | Redis 7 + ARQ | Async workers |
+| Cloud jobs | Qdrant-backed idempotent jobs and a single-writer gateway | Retryable low-volume ingestion; no separate relational database or Redis queue |
 | Cloud LLM | Qwen2.5-7B-Instruct via Ollama (dev) / vLLM (GPU) | Gap answers, conflict adjudication, alert labels, teacher data |
 | Skill Factory | Unsloth / HF PEFT, llama.cpp `convert_lora_to_gguf.py` | Mine → synth → train → eval → convert → sign → publish |
 | Knowledge Slicer | Python worker | Picks each device's ~1 M-point slice (district, language, programmes, recent gaps) and builds its partial snapshot |

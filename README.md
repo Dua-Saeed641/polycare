@@ -132,10 +132,12 @@ flowchart LR
 | Layer | Technologies |
 |---|---|
 | **App** | Kotlin 2, Jetpack Compose, Material 3, Hilt, Coroutines/Flow, Room, WorkManager |
-| **On-device AI** | llama.cpp (Qwen2.5-1.5B + LoRA skills), whisper.cpp, ONNX Runtime (multilingual-e5-small), Google ML Kit OCR |
+| **On-device AI** | llama.cpp (Qwen2.5-0.5B + LoRA skills), whisper.cpp, ONNX Runtime (multilingual-e5-small and PP-OCRv5), PaddleOCR with ML Kit fallback |
 | **Vector search** | Qdrant Edge (on the phone), Qdrant Cloud (sync, radar, knowledge slices) |
 | **Sync & security** | Protobuf, OkHttp, hybrid logical clocks, Android Keystore, Tink (ed25519), SQLCipher |
-| **Cloud** | FastAPI, PostgreSQL, S3/MinIO, Redis + ARQ, Qwen2.5-7B, Next.js dashboard |
+| **Cloud** | FastAPI, Qdrant Cloud only for database persistence, Qdrant FastEmbed for shared knowledge; dashboard and cloud AI workflows remain planned |
+
+To include offline English and Hindi OCR models in the APK, run `pwsh -File tools/models/fetch_paddle_ocr_models.ps1` before building. The script verifies pinned SHA-256 digests.
 
 ## Getting started
 

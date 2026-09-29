@@ -49,8 +49,7 @@ import org.polycare.app.ui.theme.Brand
 private val Accent = Brand.Pink
 
 /**
- * M3: household and member records with consent capture. In-memory MVP — see
- * [HouseholdsRepository]'s doc comment for why, and what M4 changes about it. A member can only
+ * Household and member records with consent capture. A member can only
  * be added once the household's consent checkbox was checked when it was created; there is no
  * way to add one without it, matching invariant 7 in the UI, not just in the repository.
  */
@@ -58,6 +57,7 @@ private val Accent = Brand.Pink
 fun HouseholdsScreen(contentPadding: PaddingValues, onBack: () -> Unit, viewModel: HouseholdsViewModel = hiltViewModel()) {
     val households by viewModel.households.collectAsStateWithLifecycle()
     val members by viewModel.members.collectAsStateWithLifecycle()
+    val storageWarning by viewModel.storageWarning.collectAsStateWithLifecycle()
     var expandedId by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(
@@ -82,10 +82,18 @@ fun HouseholdsScreen(contentPadding: PaddingValues, onBack: () -> Unit, viewMode
             Text("Families & visits", style = MaterialTheme.typography.displaySmall, color = Brand.Ink)
             Spacer(Modifier.height(4.dp))
             Text(
-                "Only the households you register on this phone are stored — nothing here syncs anywhere.",
+                "Household records are encrypted and stored on this phone. They are not synced.",
                 style = MaterialTheme.typography.labelSmall,
                 color = Brand.InkMuted,
             )
+        }
+
+        storageWarning?.let { warning ->
+            item {
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Text(warning, style = MaterialTheme.typography.bodyMedium, color = Brand.Rose)
+                }
+            }
         }
 
         item { AddHouseholdCard(onAdd = { head, village, consent -> viewModel.addHousehold(head, village, consent) }) }
@@ -223,4 +231,3 @@ private fun AddMemberRow(onAdd: (String, Int, String) -> Boolean) {
         }
     }
 }
-

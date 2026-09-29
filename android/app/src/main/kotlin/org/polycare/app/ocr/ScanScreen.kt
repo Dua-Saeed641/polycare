@@ -230,6 +230,7 @@ private fun McpConfirmationCard(
 @Composable
 private fun ResultCard(result: OcrEngine.Result) {
     Column {
+        Text("OCR engine: ${result.engine}", style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted)
         if (result.latinText.isBlank() && result.devanagariText.isBlank()) {
             GlassCard(Modifier.fillMaxWidth()) {
                 Text("No text recognised.", style = MaterialTheme.typography.bodyMedium, color = Brand.InkMuted)

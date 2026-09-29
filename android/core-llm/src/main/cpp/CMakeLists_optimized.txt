@@ -1,0 +1,51 @@
+﻿cmake_minimum_required(VERSION 3.22)
+project(polycare_llm)
+
+set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
+
+if(NOT DEFINED LLAMA_CPP_DIR)
+    message(FATAL_ERROR "LLAMA_CPP_DIR not set — run: bash native/fetch-llama-cpp.sh")
+endif()
+
+# Enable Vulkan backend for GPU acceleration (3-10x speedup potential)
+set(GGML_VULKAN ON CACHE BOOL "Enable Vulkan GPU backend" FORCE)
+
+# Enable CPU optimizations with runtime dispatch
+set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "Build all CPU variants with runtime dispatch" FORCE)
+
+# Core llama.cpp build settings
+set(LLAMA_BUILD_COMMON OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_APP OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
+
+# Advanced optimizations
+set(GGML_NATIVE OFF CACHE BOOL "Disable -march=native for fleet compatibility" FORCE)
+set(GGML_LTO ON CACHE BOOL "Enable Link Time Optimization" FORCE)
+
+add_subdirectory(${LLAMA_CPP_DIR} ${CMAKE_CURRENT_BINARY_DIR}/llama_cpp)
+
+add_library(polycare_llm SHARED jni_bridge.cpp)
+target_link_libraries(polycare_llm llama ggml log android)
+
+# Vulkan support
+if(GGML_VULKAN)
+    find_package(Vulkan REQUIRED)
+    target_link_libraries(polycare_llm Vulkan::Vulkan)
+endif()
+
+# whisper.cpp integration
+if(DEFINED WHISPER_CPP_DIR)
+    set(WHISPER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(WHISPER_BUILD_SERVER OFF CACHE BOOL "" FORCE)
+
+    add_subdirectory(${WHISPER_CPP_DIR} ${CMAKE_CURRENT_BINARY_DIR}/whisper_cpp)
+
+    add_library(polycare_whisper SHARED whisper_bridge.cpp)
+    target_link_libraries(polycare_whisper whisper ggml log android)
+endif()

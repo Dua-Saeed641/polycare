@@ -52,6 +52,7 @@ dependencies {
     implementation(project(":qdrant-edge"))
     implementation(project(":core-embed"))
     implementation(project(":core-llm"))
+    implementation(project(":ocr-paddle"))
     implementation(libs.onnxruntime.android)
     implementation(libs.mlkit.text.recognition)
     implementation(libs.mlkit.text.recognition.devanagari)
