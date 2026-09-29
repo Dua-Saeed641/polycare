@@ -62,8 +62,8 @@ not implemented. A feature is not production complete just because a screen or e
 | M3 Households/OCR/daily work | Implemented; persistence migration and PaddleOCR need device verification | Existing repository tests; OCR instrumentation has not been run on a handset |
 | M4 Evolving memory | Partial implementation | Encrypted op-log and rebuild paths exist; op-log/recovery tests and full mutation coverage missing |
 | M5 Conflicts | Partial implementation | Conflict inbox/file exchange exists; multi-device convergence and undo tests missing |
-| M6 Qdrant Cloud sync | Partial implementation | Android client and gateway exist; local tests pass, but no live device sync or two-phone run |
-| M7 Edge-to-cloud workflows | Partial implementation | Team routes now import and pass in-memory tests; live radar/gap/guidance workflows remain unverified |
+| M6 Qdrant Cloud sync | Partial implementation | A real phone registered, completed signed auth, and completed a pull-only sync through the USB tunnel; no queued ops or second phone to verify push/convergence |
+| M7 Edge-to-cloud workflows | Partial implementation | Live phone polled radar, answers, Merkle, votes, and village guidance successfully against empty collections; populated radar/gap/supervisor workflows remain unverified |
 | M8 Scale | Not implemented | No million-point device benchmark or cloud slice transfer |
 | M9 Reliability | Partial implementation | Degradation/chaos controls exist; failure matrix and low-end-phone tests missing |
 | M10 Complete product | In progress | UI/docs exist; clinical test set, broad feature tests, device E2E, release build remain |
@@ -73,8 +73,11 @@ not implemented. A feature is not production complete just because a screen or e
 passes after excluding duplicate Java metadata from the Android APK. Android test sources compile,
 but instrumented tests were not run on a handset. Gateway lockfile check and all 17 Python tests pass.
 The supplied Qdrant Cloud credential was verified; gateway startup initialized the `answers`,
-`auth_challenges`, `devices`, `guidance`, `knowledge`, `signals`, and `sync_ops` collections. No
-real device sync, clinical data load, or two-phone integration run has been done.
+`auth_challenges`, `devices`, `guidance`, `knowledge`, `signals`, and `sync_ops` collections. On
+2026-09-29, a Xiaomi 2406ERN9CI completed live health check, device registration, signed challenge
+authentication, and pull requests for alerts, answers, Merkle, votes, and village-filtered guidance
+through a USB reverse tunnel. The collections were empty, so no ops were pushed and all pulled lists
+were empty. Populated clinical workflows and a two-phone integration run remain unverified.
 
 **Known discrepancy:** `STATUS.md`, `COMPLETION_ROADMAP.md`, and implementation summaries include
 claims from untested code. This overview separates verified behavior from code that merely exists.
@@ -140,23 +143,23 @@ claims from untested code. This overview separates verified behavior from code t
 - [ ] Answers built on disputed items show a warning *(not verified in the Ask path)*
 
 ### M6 — Sync with Qdrant Cloud
-- [~] Device registration and signed authentication with the gateway *(client and gateway code exist; real gateway run unverified)*
-- [~] **Push** team knowledge, de-identified signals and gaps; **pull** team knowledge, answers, alerts and skills *(push paths exist; phone does not use `/v1/ops/pull`; no live cloud run)*
+- [x] Device registration and signed authentication with the gateway *(verified from Xiaomi 2406ERN9CI against the live Qdrant-backed gateway)*
+- [~] **Push** team knowledge, de-identified signals and gaps; **pull** answers and alerts *(live phone pull endpoints returned successfully with empty collections; no pending op existed to exercise push; phone does not use `/v1/ops/pull`)*
 - [~] **Sync Gate**: private never leaves; redundant items send only a "+1"; new, widely useful knowledge goes first *(implemented in code, no two-device privacy test)*
 - [~] Only topics that differ are exchanged; screen shows diverged topics and bytes saved *(Merkle/team memory code exists; no two-device verification)*
 - [~] Stable-window wait, backoff, metered-data and low-battery rules *(WorkManager constraints exist; device validation needed)*
 - [~] Killed mid-sync → resumes with no loss and no duplicates *(chaos hook exists; scenario not tested)*
-- [~] **Sync & Activity** screen *(screen exists; live gateway status and queue behavior unverified)*
+- [~] **Sync & Activity** screen *(live connection/auth/sync completed; no-op queue and empty cloud response; UI button tap and non-empty queue behavior remain unverified)*
 
 **Done when:** two phones edit offline, reconnect, and share team knowledge through Qdrant Cloud with household data untouched.
 
 ### M7 — Edge-to-cloud AI workflows
-- [~] **Gap answering**: offline questions answered by the cloud and approved by a supervisor *(routes now import and pass local tests; live workflow still unverified)*
-- [~] **Outbreak Radar**: symptom clustering and guidance code exists; end-to-end run blocked by gateway import and absent cloud credentials
+- [~] **Gap answering**: offline questions answered by the cloud and approved by a supervisor *(routes pass local tests; live supervisor publish/phone retrieval not exercised)*
+- [~] **Outbreak Radar**: live phone alert poll succeeded against the cloud; no signals existed, so clustering and alert delivery remain unverified
 - [ ] **Knowledge slicing**: partial snapshot selection/refresh is not implemented
 - [~] **Skill delivery**: signed artifact server, publisher and client downloader exist; full deploy/install test missing
 - [ ] Staleness lowers confidence on answers that rely on long-unsynced memory
-- [~] **Supervisor dashboard** (web): static dashboard/endpoints exist; gateway currently fails to import team routes
+- [~] **Supervisor dashboard** (web): gateway routes load and cloud stats were verified; populated supervisor workflows and dashboard browser flow remain unverified
 
 **Done when:** an offline gap on Phone A is answered after sync, and a radar alert reaches phones in the affected villages.
 

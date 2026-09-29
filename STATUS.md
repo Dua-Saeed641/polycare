@@ -20,7 +20,24 @@ Detailed implementation log; the live completion overview is in [MILESTONES.md](
   still need end-to-end verification.
 - The Android unit tests and debug/test APK builds passed earlier; instrumentation still needs a handset.
 
-## Latest (2026-09-29 late): merged with the OCR/sync-gateway work; phone sync client, radar, conflicts, faster LLM, accessible UI. Written, not yet run on a phone.
+## Latest verification: real phone sync over USB (2026-09-29)
+
+- The connected Xiaomi 2406ERN9CI (Android 16) was updated in place with the current debug APK,
+  preserving its app data. A debug-only `sync_check` launch extra now invokes the injected
+  `SyncRepository` so device sync can be verified even when MIUI blocks ADB touch injection.
+- The app reached the local gateway through `adb reverse`, registered its Ed25519 key, completed
+  signed challenge authentication, and completed `syncNow()` against the live Qdrant Cloud cluster.
+  Gateway logs confirm successful 200 responses for radar alerts, answers, Merkle, votes, and
+  village-filtered guidance.
+- This was a no-op push: the handset had no pending operations, and the cloud collections contained
+  no signals, gaps, answers, or guidance. Thus auth and pull transport are verified; signed op push,
+  populated alerts/gap answering, and two-phone convergence are still open.
+- The temporary settings file and USB reverse tunnel have been removed. The phone's pre-existing app
+  data was preserved; the successful device registration remains in Qdrant. `:app:assembleDebug`
+  passed after adding the sync check; gateway unit tests and `uv lock --check` passed in the earlier
+  gateway repair step.
+
+## Earlier verification snapshot (2026-09-29 late): merged with the OCR/sync-gateway work; later superseded by the USB sync verification above.
 
 **Nothing in this section has been run or tested on a phone.** It compiles (`:core-common:compileKotlin`, `:app:compileDebugKotlin`, a clean `:core-llm:buildCMakeDebug[arm64-v8a]`, unit-test sources) and that is all that was checked.
 
@@ -156,9 +173,15 @@ Detailed implementation log; the live completion overview is in [MILESTONES.md](
 | On-device speech | whisper.cpp, multilingual `ggml-base` q5_1, shares its ggml build with llama.cpp (one copy, no APK collision) | `core-llm` (`whisper_bridge.cpp`, `WhisperEngine`) | `whisper_wav_path` → English clip transcribed **word-for-word** on phone |
 | OCR / Scan | PaddleOCR PP-OCRv5 ONNX pipeline with separate Latin and Devanagari recognizers; ML Kit fallback | `app/.../ocr`, `android/ocr-paddle` | Instrumented offline bilingual scan added; still needs connected-device execution |
 
-## Not built yet
+## Remaining verification gates
 
-Voice capture in the Ask UI (engine + permissions wiring built; live capture unverified), Android op-log and sync client, Outbreak Radar, Conflict Inbox, supervisor dashboard, and full cloud AI workflows remain incomplete. The Qdrant-only gateway is not connected to Android and has not been checked against a live Qdrant Cloud cluster. PaddleOCR PP-OCRv5 Android runtime and SHA-256-pinned English/Devanagari models are integrated; connected-device accuracy/performance verification remains. GPU acceleration is not built (Vulkan is disabled). Household data is encrypted at rest; migration needs a physical-device check.
+Voice capture in the Ask UI (engine + permissions wiring built; live capture unverified), signed op
+push with a non-empty queue, populated Radar/gap/guidance workflows, and two-phone convergence remain
+incomplete. The Android sync client is now connected to the live Qdrant-backed gateway and has
+completed registration, signed authentication, and an empty-data pull cycle over USB. PaddleOCR
+PP-OCRv5 Android runtime and SHA-256-pinned English/Devanagari models are integrated; connected-device
+accuracy/performance verification remains. GPU acceleration is not built (Vulkan is disabled).
+Household data is encrypted at rest; migration needs a physical-device check.
 
 ---
 

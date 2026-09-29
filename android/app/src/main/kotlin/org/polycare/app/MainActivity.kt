@@ -37,6 +37,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var whisperProvider: WhisperProvider
     @Inject lateinit var skillsRepository: SkillsRepository
     @Inject lateinit var householdsRepository: org.polycare.app.households.HouseholdsRepository
+    @Inject lateinit var syncRepository: org.polycare.app.sync.SyncRepository
     @Inject lateinit var events: EventLog
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,6 +50,7 @@ class MainActivity : ComponentActivity() {
         if (isDebuggable() && intent.getBooleanExtra(EXTRA_HOUSEHOLD_CHECK, false)) runHouseholdCheck()
         if (isDebuggable() && intent.getBooleanExtra(EXTRA_DUE_LIST_CHECK, false)) runDueListCheck()
         if (isDebuggable() && intent.getBooleanExtra(EXTRA_HINDI_CHECK, false)) runHindiCheck()
+        if (isDebuggable() && intent.getBooleanExtra(EXTRA_SYNC_CHECK, false)) runSyncCheck()
         debugWhisperWavPath()?.let(::runWhisperCheck)
         setContent {
             PolyCareTheme {
@@ -416,6 +418,27 @@ class MainActivity : ComponentActivity() {
 
     private fun isDebuggable() = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
+    /** Debug builds only: `--ez sync_check true` verifies gateway enrollment/auth and a full sync. */
+    private fun runSyncCheck() {
+        lifecycleScope.launch {
+            val connection = syncRepository.testConnection()
+            if (connection.isFailure) {
+                Log.e(SYNC_TAG, "sync_check connection FAIL: ${connection.exceptionOrNull()?.message}")
+                return@launch
+            }
+            Log.i(SYNC_TAG, "sync_check connection PASS: ${connection.getOrThrow()}")
+            when (val result = syncRepository.syncNow()) {
+                is org.polycare.app.sync.SyncState.Done -> Log.i(
+                    SYNC_TAG,
+                    "sync_check PASS pushed=${result.stats.pushedOps} answers=${result.stats.answersReceived} " +
+                        "alerts=${result.stats.alertsReceived} guidance=${result.stats.guidanceReceived}",
+                )
+                is org.polycare.app.sync.SyncState.Failed -> Log.e(SYNC_TAG, "sync_check sync FAIL: ${result.reason}")
+                else -> Log.w(SYNC_TAG, "sync_check ended in ${result.javaClass.simpleName}")
+            }
+        }
+    }
+
     private companion object {
         const val EXTRA_BENCH_POINTS = "bench_points"
         const val EXTRA_EMBED_CHECK = "embed_check"
@@ -425,6 +448,7 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_HINDI_CHECK = "hindi_check"
         const val EXTRA_HOUSEHOLD_CHECK = "household_check"
         const val EXTRA_DUE_LIST_CHECK = "due_list_check"
+        const val EXTRA_SYNC_CHECK = "sync_check"
         const val EXTRA_SEARCH_QUERY = "search_query"
         const val EXTRA_ASK_QUERY = "ask_query"
         const val EXTRA_OPEN_TRIAGE = "open_triage"
@@ -435,5 +459,6 @@ class MainActivity : ComponentActivity() {
         const val EMBED_TAG = "PolyCareEmbed"
         const val LLM_TAG = "PolyCareLlm"
         const val WHISPER_TAG = "PolyCareWhisper"
+        const val SYNC_TAG = "PolyCareSync"
     }
 }

@@ -48,8 +48,9 @@ India's **~1 million ASHA workers** each look after about 1,000 people. They tra
 
 > **Project status (2026-09-29):** M0 foundations (9/10; Qdrant Cloud is reachable and its gateway
 > collections are initialized; the knowledge snapshot is still outstanding) and M1 on-device
-> knowledge/search (5/5) have verified results. Android unit tests and debug/test APK builds pass;
-> all 17 gateway tests pass. Live device sync and district workflows remain unverified.
+> knowledge/search (5/5) have verified results. All 17 gateway tests pass. A Xiaomi phone completed
+> live device registration, signed authentication, and a pull-only sync through USB; cloud collections
+> were empty, so push and populated district workflows remain unverified.
 > See [MILESTONES.md](MILESTONES.md) for the implementation/verification breakdown.
 
 **At the doorstep**
@@ -63,8 +64,8 @@ India's **~1 million ASHA workers** each look after about 1,000 people. They tra
 - **Monthly report** and incentive tracker filled from recorded visits
 
 **Team and district intelligence**
-- **Sync with Qdrant Cloud**: Android client, gateway and background worker are implemented; live sync is not verified
-- **Gap answering**, **Outbreak Radar** and a **supervisor dashboard**: gateway routes and local tests exist; live district workflows remain unverified
+- **Sync with Qdrant Cloud**: a Xiaomi phone completed registration, signed authentication, and the live pull cycle through a USB tunnel; push and two-phone convergence still need verification
+- **Gap answering**, **Outbreak Radar** and a **supervisor dashboard**: phone radar/answers/Merkle/votes/guidance polls reached Qdrant Cloud successfully; empty collections mean populated district workflows remain unverified
 - **Conflict Inbox**: local conflict detection and resolution UI exists; multi-device convergence is unverified
 
 **Built to be trusted**
@@ -186,8 +187,8 @@ assets/         banner, logo, Tenor Sans
 | **M2** | Offline health assistant and triage | Core flows verified; voice/speculative paths partial |
 | **M3** | Households, OCR and daily work | Implemented; new OCR/persistence paths need device verification |
 | **M4–M5** | Evolving memory and conflicts | Partial implementation; recovery/convergence tests missing |
-| **M6** | Sync with Qdrant Cloud | Client/server code exists; local tests pass; live device sync unverified |
-| **M7** | Outbreak Radar, gap answering, knowledge slicing | Routes/tests pass locally; live workflows unverified; slicing not implemented |
+| **M6** | Sync with Qdrant Cloud | Xiaomi completed live registration, signed auth, and pull-only sync over USB; push and two-phone convergence remain |
+| **M7** | Outbreak Radar, gap answering, knowledge slicing | Live empty-data polls passed; populated workflows unverified; slicing not implemented |
 | **M8–M10** | Scale, reliability and complete product | Scale not implemented; reliability/product remain in progress |
 
 Full checklist in [MILESTONES.md](MILESTONES.md).
