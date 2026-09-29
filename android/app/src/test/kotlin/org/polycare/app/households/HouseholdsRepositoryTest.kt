@@ -53,6 +53,9 @@ class HouseholdsRepositoryTest {
 
     @Test
     fun recordsVisitAndCompletesDueListItem() {
+        val hh = repo.addHousehold("Sunita Devi", "Rampur", consentGiven = true)
+        val member = repo.addMember(hh.id, "Sunita Devi", 24, "Mother")!!
+        repo.scheduleFollowUp(hh.id, member.id, member.name, VisitType.ANC, inDays = 0)
         val initialDueCount = repo.dueItems.value.count { !it.completed }
         val targetDue = repo.dueItems.value.first { !it.completed }
 

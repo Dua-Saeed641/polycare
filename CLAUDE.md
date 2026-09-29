@@ -12,7 +12,8 @@ Read first: `PROJECT_DESCRIPTION.md` (why/who/features), `ARCHITECTURE.md` (how)
 ## Repository layout
 ```
 android/   Kotlin + Compose app; core-* modules (common, llm, embed, vector, memory, ocr, oplog, sync, governor)
-cloud/     gateway (FastAPI), workers (ARQ), skill-factory, knowledge-slicer, dashboard (Next.js)
+cloud/     gateway (FastAPI + Qdrant: signed sync, team features, artifact server, supervisor dashboard),
+           skill-factory (supervisor answers + knowledge -> LoRA skill -> signed update)
 native/    qdrant-edge Rust crate + UniFFI bindings, built with cargo-ndk
 proto/     sync.proto — the ONLY definition of the wire format
 tools/     seed data, chaos scripts, benchmarks

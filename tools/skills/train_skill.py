@@ -109,9 +109,17 @@ def load_examples(skill_id: str) -> list[str]:
     ]
     random.Random(SEED).shuffle(candidates)
     chosen = candidates[:MAX_EXAMPLES]
-    if len(chosen) < 10:
-        raise SystemExit(f"only {len(chosen)} usable passages for {skill_id}; check {KNOWLEDGE_REPORT}")
-    return [chat_ml(ASK_SYSTEM, f"Passage (from {spec['title']}):\n{p['text']}\n\nQuestion: {spec['prompt']}", p["text"]) for p in chosen]
+    extras = spec.get("extra_examples", [])
+    if len(chosen) + len(extras) < 10:
+        raise SystemExit(f"only {len(chosen) + len(extras)} usable examples for {skill_id}; check {KNOWLEDGE_REPORT}")
+    texts = [chat_ml(ASK_SYSTEM, f"Passage (from {spec['title']}):\n{p['text']}\n\nQuestion: {spec['prompt']}", p["text"]) for p in chosen]
+    # Supervisor answers (cloud/skill-factory): the answer is the grounding passage, in the same
+    # prompt shape the phone uses, so the adapter learns to restate a supervisor's guidance too.
+    texts += [
+        chat_ml(ASK_SYSTEM, f"Passage (from a supervisor):\n{x['answer']}\n\nQuestion: {x['question']}", x["answer"])
+        for x in extras
+    ]
+    return texts
 
 
 @dataclass
@@ -234,8 +242,17 @@ def update_manifest(entries: dict[str, dict]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("skill", choices=sorted(SKILLS))
+    parser.add_argument("skill")
+    parser.add_argument(
+        "--spec",
+        help="JSON file defining a new skill (id, title, sources, prompt, card, extra_examples); see cloud/skill-factory/factory.py",
+    )
     args = parser.parse_args()
+    if args.spec:
+        spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
+        SKILLS[spec["id"]] = {**spec, "sources": set(spec["sources"])}
+    if args.skill not in SKILLS:
+        raise SystemExit(f"unknown skill {args.skill!r}; known: {sorted(SKILLS)} (or pass --spec)")
 
     OUT.mkdir(parents=True, exist_ok=True)
     adapter_dir = train(args.skill)

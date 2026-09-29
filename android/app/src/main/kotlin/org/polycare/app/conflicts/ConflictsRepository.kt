@@ -9,6 +9,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.polycare.app.households.HouseholdsRepository
 import org.polycare.app.security.SecureBox
+import org.polycare.app.team.TeamMemoryRepository
+import org.polycare.app.team.TeamTip
+import org.polycare.app.team.TipStatus
 import org.polycare.common.EventLog
 import org.polycare.common.EventLog.Category
 import org.polycare.common.Hlc
@@ -34,6 +37,8 @@ data class ConflictRecord(
     val incomingValue: String,
     val incomingAuthor: String,
     val numeric: Boolean,
+    /** For a `tip` conflict: the id of the incoming tip ([entityId] is the tip already on the phone). */
+    val otherId: String? = null,
     val resolution: Resolution? = null,
     /** The local value just before a resolution changed it, so [ConflictsRepository.reopen] can restore it. */
     val restoreValue: String? = null,
@@ -56,6 +61,7 @@ data class ImportSummary(val added: Int, val unchanged: Int, val conflicts: Int,
 class ConflictsRepository @Inject constructor(
     @ApplicationContext context: Context,
     private val households: HouseholdsRepository,
+    private val team: TeamMemoryRepository,
     private val clock: HlcClock,
     private val events: EventLog,
 ) {
@@ -174,8 +180,49 @@ class ConflictsRepository @Inject constructor(
         return ImportSummary(added, unchanged, newConflicts, refused)
     }
 
+    /**
+     * Files a possible contradiction for each existing tip that [incoming] closely resembles but
+     * words differently (found by [TeamMemoryRepository.applyRemote]). The model is *not* consulted
+     * here: this runs during a background sync, and loading the language model there would cost
+     * memory and battery. The Conflict Inbox offers "Ask the on-device model" per conflict instead.
+     * Returns how many were filed.
+     */
+    fun addTipConflicts(incoming: TeamTip, candidates: List<TeamTip>): Int {
+        val created = ArrayList<ConflictRecord>()
+        for (local in candidates) {
+            val exists = _conflicts.value.any {
+                it.kind == "tip" && ((it.entityId == local.id && it.otherId == incoming.id) || (it.entityId == incoming.id && it.otherId == local.id))
+            }
+            if (exists) continue
+            created += ConflictRecord(
+                id = newId(), kind = "tip", entityId = local.id, subject = "Team tip", field = "text", fieldLabel = "Wording",
+                localValue = local.text, localAuthor = if (local.mine) "you" else local.author,
+                incomingValue = incoming.text, incomingAuthor = incoming.author, numeric = false, otherId = incoming.id,
+            )
+        }
+        if (created.isNotEmpty()) {
+            _conflicts.value = created + _conflicts.value
+            save()
+            events.record(Category.CONFLICTS, "Tip conflicts filed", mapOf("count" to created.size))
+        }
+        return created.size
+    }
+
     fun resolve(id: String, choice: Resolution) {
         val c = _conflicts.value.firstOrNull { it.id == id && it.open } ?: return
+        if (c.kind == "tip") {
+            // Team tips: keep one, the other, or both. Nothing is deleted, only hidden, so Undo restores it.
+            val mine = c.entityId
+            val theirs = c.otherId ?: return
+            when (choice) {
+                Resolution.KEEP_LOCAL -> { team.setStatus(mine, TipStatus.OK); team.setStatus(theirs, TipStatus.SUPERSEDED) }
+                Resolution.KEEP_INCOMING -> { team.setStatus(mine, TipStatus.SUPERSEDED); team.setStatus(theirs, TipStatus.OK) }
+                Resolution.KEEP_BOTH -> { team.setStatus(mine, TipStatus.OK); team.setStatus(theirs, TipStatus.OK) }
+            }
+            replace(c.copy(resolution = choice))
+            events.record(Category.CONFLICTS, "Tip conflict resolved", mapOf("choice" to choice.name))
+            return
+        }
         var restore: String? = null
         when (choice) {
             Resolution.KEEP_LOCAL -> Unit
@@ -189,6 +236,13 @@ class ConflictsRepository @Inject constructor(
     /** Undoes a resolution: restores the local value it changed and puts the conflict back in the inbox. */
     fun reopen(id: String) {
         val c = _conflicts.value.firstOrNull { it.id == id && !it.open } ?: return
+        if (c.kind == "tip") {
+            team.setStatus(c.entityId, TipStatus.DISPUTED)
+            c.otherId?.let { team.setStatus(it, TipStatus.DISPUTED) }
+            replace(c.copy(resolution = null))
+            events.record(Category.CONFLICTS, "Tip conflict reopened", emptyMap())
+            return
+        }
         c.restoreValue?.let { apply(c, it) }
         replace(c.copy(resolution = null, restoreValue = null))
         events.record(Category.CONFLICTS, "Conflict reopened", mapOf("field" to c.field))
@@ -230,7 +284,7 @@ class ConflictsRepository @Inject constructor(
             arr.put(
                 JSONObject().put("id", it.id).put("kind", it.kind).put("eid", it.entityId).put("subject", it.subject)
                     .put("field", it.field).put("label", it.fieldLabel).put("lv", it.localValue).put("la", it.localAuthor)
-                    .put("iv", it.incomingValue).put("ia", it.incomingAuthor).put("num", it.numeric)
+                    .put("iv", it.incomingValue).put("ia", it.incomingAuthor).put("num", it.numeric).put("oid", it.otherId ?: JSONObject.NULL)
                     .put("res", it.resolution?.name ?: JSONObject.NULL).put("restore", it.restoreValue ?: JSONObject.NULL),
             )
         }
@@ -247,6 +301,7 @@ class ConflictsRepository @Inject constructor(
                 field = o.getString("field"), fieldLabel = o.getString("label"), localValue = o.getString("lv"),
                 localAuthor = o.optString("la"), incomingValue = o.getString("iv"), incomingAuthor = o.optString("ia"),
                 numeric = o.optBoolean("num"),
+                otherId = o.optString("oid").takeIf { it.isNotBlank() && it != "null" },
                 resolution = o.optString("res").takeIf { it.isNotBlank() && it != "null" }?.let { Resolution.valueOf(it) },
                 restoreValue = o.optString("restore").takeIf { it.isNotBlank() && it != "null" },
             )

@@ -66,6 +66,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.polycare.app.ai.VoiceRecorder
 import org.polycare.app.team.TeamAnswer
+import org.polycare.app.team.TeamTip
+import org.polycare.app.team.TipStatus
 import org.polycare.app.ui.components.AppIconButton
 import org.polycare.app.ui.components.ChipRow
 import org.polycare.app.ui.components.ChoiceChip
@@ -241,6 +243,7 @@ private fun AnswerCard(state: AskUi.Answered) {
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         state.teamAnswer?.let { TeamAnswerCard(it) }
+        if (state.teamTips.isNotEmpty()) TeamTipsCard(state.teamTips)
 
         GlassCard(Modifier.fillMaxWidth(), padding = 20.dp, accent = Brand.Plum) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -358,10 +361,36 @@ private fun TeamAnswerCard(answer: TeamAnswer) {
     }
 }
 
+/** Tips other ASHAs shared that are close to the question, clearly labelled as team knowledge. */
+@Composable
+private fun TeamTipsCard(tips: List<TeamTip>) {
+    GlassCard(Modifier.fillMaxWidth(), padding = 20.dp, accent = Brand.Positive) {
+        SectionLabel("Shared by the team", color = Brand.Positive)
+        tips.forEachIndexed { i, tip ->
+            Spacer(Modifier.height(if (i == 0) 8.dp else 14.dp))
+            Text(tip.text, style = MaterialTheme.typography.bodyLarge, color = Brand.Ink)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                buildString {
+                    append(if (tip.votes == 0) "No votes yet" else "${tip.votes} found this useful")
+                    if (tip.status == TipStatus.DISPUTED) append(" · may disagree with another tip")
+                },
+                style = MaterialTheme.typography.labelSmall, color = if (tip.status == TipStatus.DISPUTED) Brand.Red else Brand.InkMuted,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Advice from other health workers, not an official protocol. Check it against the source below.",
+            style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted,
+        )
+    }
+}
+
 @Composable
 private fun NoAnswerCard(state: AskUi.NoAnswer) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         state.teamAnswer?.let { TeamAnswerCard(it) }
+        if (state.teamTips.isNotEmpty()) TeamTipsCard(state.teamTips)
         GlassCard(Modifier.fillMaxWidth(), padding = 20.dp) {
             Text("No matching passage found.", style = MaterialTheme.typography.titleMedium, color = Brand.Ink)
             Spacer(Modifier.height(6.dp))

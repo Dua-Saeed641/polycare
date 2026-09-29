@@ -43,6 +43,9 @@ android {
     buildFeatures {
         compose = true
     }
+    packaging {
+        jniLibs.pickFirsts += "**/libc++_shared.so"
+    }
 }
 
 dependencies {
@@ -52,10 +55,14 @@ dependencies {
     implementation(project(":qdrant-edge"))
     implementation(project(":core-embed"))
     implementation(project(":core-llm"))
+    implementation(project(":ocr-paddle"))
     implementation(libs.onnxruntime.android)
     implementation(libs.mlkit.text.recognition)
     implementation(libs.mlkit.text.recognition.devanagari)
     implementation(libs.androidx.exifinterface)
+    // Ed25519 for signing sync ops (the platform only has Ed25519 from API 33; minSdk is 29).
+    implementation(libs.bouncycastle)
+    implementation(libs.androidx.work.runtime.ktx)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

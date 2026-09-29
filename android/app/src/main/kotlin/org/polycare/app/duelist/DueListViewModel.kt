@@ -19,6 +19,18 @@ import org.polycare.app.households.VisitSearchResult
 import org.polycare.app.households.VisitType
 import javax.inject.Inject
 
+/** Days from today until [item] is due (negative = overdue); null for a legacy label instead of a date. */
+fun dueDay(item: DueItem, today: java.time.LocalDate = java.time.LocalDate.now()): Long? =
+    runCatching { java.time.temporal.ChronoUnit.DAYS.between(today, java.time.LocalDate.parse(item.dueDate)) }.getOrNull()
+
+/** "Overdue by 3 days", "Due today", "Tomorrow", "In 5 days" — derived from the real date every time. */
+fun dueLabel(item: DueItem): String = when (val d = dueDay(item)) {
+    null -> item.dueDate
+    0L -> "Due today"
+    1L -> "Tomorrow"
+    else -> if (d < 0) "Overdue by ${-d} day${if (-d == 1L) "" else "s"}" else "In $d days"
+}
+
 enum class DueFilter(val label: String) {
     ALL("All Due"),
     HIGH_RISK("High Risk"),
@@ -44,7 +56,7 @@ class DueListViewModel @Inject constructor(
     val visits: StateFlow<List<Visit>> = repo.visits
 
     val filteredDueItems: StateFlow<List<DueItem>> = combine(repo.dueItems, _filter) { items, currentFilter ->
-        val pending = items.filter { !it.completed }
+        val pending = items.filter { !it.completed }.sortedWith(compareBy<DueItem> { it.priority != DuePriority.HIGH }.thenBy { dueDay(it) ?: Long.MAX_VALUE })
         when (currentFilter) {
             DueFilter.ALL -> pending
             DueFilter.HIGH_RISK -> pending.filter { it.priority == DuePriority.HIGH }

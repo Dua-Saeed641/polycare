@@ -29,7 +29,7 @@
 |---|---|---|
 | UI | Kotlin 2, Jetpack Compose, Material 3, Hilt, StateFlow | Ask, Triage, Scan, Households, Due List, Skills Shelf, Memory Inspector, Sync & Activity, Conflict Inbox, Chaos Panel |
 | Speech-to-text | whisper.cpp multilingual (`base` / `small` q5) via JNI; IndicConformer as candidate | Push-to-talk in Hindi and English, fully offline |
-| OCR | Google ML Kit Text Recognition v2 (Latin + Devanagari, bundled models) + ML Kit Document Scanner | MCP cards, lab reports, prescriptions, medicine strips, register pages |
+| OCR | PaddleOCR PP-OCRv5 ONNX Android SDK (Apache-2.0; Latin + Devanagari models), ML Kit fallback | Offline MCP cards, lab reports, prescriptions, medicine strips, register pages |
 | Field extractor | Base LLM in grammar-constrained JSON mode + regex rules | OCR text → structured fields (BP, Hb, EDD, dose, expiry) |
 | Dense embedder | ONNX Runtime Mobile, `multilingual-e5-small` int8 (384-d) | Query + document embeddings (Hindi + English), stamped with `model_id` |
 | Sparse encoder | BM25 tokenizer (Kotlin, Indic-aware normalisation) → Qdrant sparse vector | Exact hits on drug names, IDs, lab values |
@@ -56,9 +56,8 @@
 |---|---|---|
 | Vector DB | **Qdrant Cloud** (managed Qdrant Server) | `fleet_memory`, `knowledge_atlas`, `skill_registry`, `draft_corpus`, `knowledge_gaps`, `signals`, `radar_regions`, `atlas` |
 | Edge Gateway | FastAPI, Python 3.12, Uvicorn, Pydantic v2, `qdrant-client` | Device auth, op verify/dedupe, privacy enforcement, Merkle, pull, gaps, skills, knowledge slices |
-| Relational DB | PostgreSQL 16 | Devices & keys, global op-log, HLC watermarks, tombstones + acks, skill versions |
-| Object storage | MinIO / S3 | Adapter GGUF blobs, Qdrant partial snapshots, signed manifests |
-| Job queue | Redis 7 + ARQ | Async workers |
+| Cloud persistence | **Qdrant Cloud only** | Payload-only collections for devices, challenges, signed ops and sync metadata; vector collections for approved signals, knowledge and skills |
+| Cloud job processing | Qdrant-backed idempotent operations and a single-writer gateway | Retryable low-volume ingestion; Qdrant Cloud is the only cloud persistence service |
 | Cloud LLM | Qwen2.5-7B-Instruct via Ollama (dev) / vLLM (GPU) | Gap answers, conflict adjudication, alert labels, teacher data |
 | Skill Factory | Unsloth / HF PEFT, llama.cpp `convert_lora_to_gguf.py` | Mine → synth → train → eval → convert → sign → publish |
 | Knowledge Slicer | Python worker | Picks each device's ~1 M-point slice (district, language, programmes, recent gaps) and builds its partial snapshot |
@@ -188,7 +187,7 @@ Skills: `maternal-care`, `newborn-care`, `child-illness` (IMNCI), `immunisation`
 Symptoms (voice, text or checklist) → retrieve matching danger-sign rules from `knowledge` → rule table decides *Refer now* / *24 h* / *Home care* → LLM writes the explanation citing the rule. The rule table, not the LLM, makes the referral decision.
 
 ### 5.4 OCR pipeline
-ML Kit Document Scanner → Text Recognition v2 (Latin + Devanagari) → field extraction (regex for BP, Hb, dates; LLM JSON mode for the rest) → ASHA confirms fields → `Upsert` op into `households`.
+Camera/gallery image → PaddleOCR PP-OCRv5 detector with Latin and Devanagari ONNX recognizers → field extraction → ASHA confirmation → local household record. ML Kit remains a fallback when the SHA-256-pinned Paddle model assets are unavailable or fail to load. Run powershell -ExecutionPolicy Bypass -File tools/models/fetch_paddle_ocr_models.ps1 before building so the APK contains all models and can scan offline from first use.
 
 ### 5.5 Speculative decoding from memory
 Top-3 `drafts` for (skill, query) plus top retrieved passages → llama.cpp n-gram lookup cache → the model verifies up to *k* = 5 draft tokens per pass. Acceptance rates are logged as `DraftFeedback` ops.
@@ -351,7 +350,7 @@ Embedder (multilingual-e5-small int8, 118 MB, ONNX Runtime 1.30, same phone):
 
 **Models:** Qwen2.5-1.5B-Instruct and Qwen2.5-0.5B-Instruct (Q4_K_M GGUF) · LoRA r=16 health skills (GGUF) · multilingual-e5-small (int8 ONNX) · whisper base/small multilingual (q5) · Qwen2.5-7B-Instruct (cloud only)
 
-**Cloud:** **Qdrant Cloud** · FastAPI / Uvicorn / Pydantic v2 · qdrant-client · PostgreSQL 16 · MinIO / S3 · Redis 7 + ARQ · Ollama / vLLM · Unsloth / PEFT · HDBSCAN · Next.js 15 · shadcn/ui · Recharts · Prometheus · Grafana · Toxiproxy · Docker Compose
+**Cloud:** **Qdrant Cloud only** · FastAPI / Uvicorn / Pydantic v2 · qdrant-client + FastEmbed · single-writer gateway · Ollama / vLLM and dashboard are future services, not currently deployed.
 
 ---
 
@@ -390,3 +389,18 @@ polycare/
 | llama.cpp LoRA hot-swap on Android | Load base + 2 adapters, switch per request | Single-adapter mode |
 | Low-end phones (3–4 GB RAM) | Run on a budget phone | 0.5B model or retrieval-only mode |
 | Clinical safety | Safety test set reviewed against official ASHA modules | Rule table decides referrals; LLM only explains |
+
+---
+
+## 13. Implementation notes (what the code actually does)
+
+Where the running code simplifies or differs from the sections above. Everything here compiles; none of it has been run on a phone yet (see STATUS.md).
+
+- **§5.5 Speculative decoding.** Prompt-lookup drafting, not a separate draft model: the n-gram corpus is the prompt plus the other retrieved passages and shared tips ("memory"), and every accepted token is verified by the target model in one batch, so output equals plain greedy decoding. There is no `drafts` shard.
+- **§5.6 Semantic Merkle.** SimHash-16 with 16 Gaussian hyperplanes generated by `java.util.Random(SignalCodec.FLEET_SEED)`; a 16-ary tree of four levels over **tip** ops only. The gateway builds the tree per request by scanning tip ops (fine at low volume). Vote counts are a separate aggregate endpoint because a vote carries no region. The "diverged: <topic>" label is the first words of the newest tips received, not an atlas centroid (no atlas yet).
+- **§5.7 Sync Gate.** Signals, gaps, tips and votes may leave; nothing else. Tips go through `TipGate`: `novelty = 1 - max cosine`; a candidate at cosine >= 0.92 to an existing tip becomes a **vote** for it; otherwise `priority = novelty x (1 + rknn)` with `rknn` = known tips whose 3rd-nearest-neighbour radius the candidate falls inside. Priority does not reorder the outbox (the cursor must stay contiguous); on a metered link tips below the priority threshold are *deferred* and end that run.
+- **§5.8 Conflicts.** Tip conflicts are candidates (same model, different author, cosine >= 0.90, different words) filed in the Conflict Inbox. The entails/contradicts judgement is an optional on-demand call to the on-device model (advice only), never run during a background sync. Resolving is local: the losing tip is hidden on this phone, not superseded in the cloud (there is no `Merge` op yet).
+- **§6.3 Sync.** Runs from WorkManager (network + battery-not-low, every 6 h, plus soon after something shareable is recorded, after the 30 s steady window); metered links get a 64 KB budget per run. Steps 5-6 of §6.3 (apply ops, partial snapshots for `skills`/`atlas`/`knowledge`) are covered by tip reconciliation and signed artifact downloads; there is no Qdrant partial-snapshot transfer.
+- **§6.4 Artifacts.** Signed with an offline publisher key (Ed25519 over `{kind,name,version,sha256,size}`), pinned on the phone; resumable `Range` download into `.part`, fsync, size + sha256 check, base-model/embedding-model compatibility check, atomic install, quarantine on failure.
+- **§6.5 Alerts.** The gateway clusters the signal embeddings (this ISO week and last) and returns alerts; supervisors can send a **guidance card** to the villages an alert names, which phones in those villages fetch on their next sync.
+

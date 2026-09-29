@@ -30,7 +30,7 @@ class DeviceCheckViewModel @Inject constructor(probe: DeviceProbe) : ViewModel()
             emit(
                 DeviceCheckState(
                     snapshot = s,
-                    rung = DegradationLadder.choose(s),
+                    rung = org.polycare.app.chaos.Chaos.rung(DegradationLadder.choose(s)),
                     arm64 = DegradationLadder.supportsArm64(s),
                     fitsKnowledgeSlice = DegradationLadder.canHoldFullKnowledgeSlice(s),
                 ),

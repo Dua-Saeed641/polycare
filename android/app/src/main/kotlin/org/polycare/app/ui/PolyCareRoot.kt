@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CallMerge
 import androidx.compose.material.icons.outlined.CloudSync
+import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.Medication
 import androidx.compose.material.icons.outlined.Radar
 import androidx.compose.material.icons.outlined.DocumentScanner
@@ -83,6 +84,7 @@ import org.polycare.app.sync.SyncScreen
 import org.polycare.app.radar.RadarScreen
 import org.polycare.app.conflicts.ConflictInboxScreen
 import org.polycare.app.medicine.MedicineScreen
+import org.polycare.app.team.TeamTipsScreen
 import org.polycare.app.ui.components.BrandBackground
 import org.polycare.app.ui.components.Wordmark
 import org.polycare.app.ui.theme.Brand
@@ -106,6 +108,7 @@ private const val SYNC_ROUTE = "sync"
 private const val RADAR_ROUTE = "radar"
 private const val CONFLICTS_ROUTE = "conflicts"
 private const val MEDICINE_ROUTE = "medicine"
+private const val TIPS_ROUTE = "tips"
 
 private data class DrawerItem(val route: String, val label: String, val icon: ImageVector, val accent: Color)
 
@@ -116,6 +119,7 @@ private val DrawerDestinations = listOf(
     DrawerItem(Tab.Triage.route, "Triage", Tab.Triage.icon, Tab.Triage.accent),
     DrawerItem(Tab.Search.route, "Search", Tab.Search.icon, Tab.Search.accent),
     DrawerItem(MEDICINE_ROUTE, "Medicines & counselling", Icons.Outlined.Medication, Brand.Positive),
+    DrawerItem(TIPS_ROUTE, "Team tips", Icons.Outlined.Lightbulb, Brand.Positive),
     DrawerItem(HOUSEHOLDS_ROUTE, "Households", Icons.Outlined.Groups, Brand.Pink),
     DrawerItem(DUE_LIST_ROUTE, "Due list", Icons.Outlined.CalendarMonth, Brand.Red),
     DrawerItem(SCAN_ROUTE, "Scan", Icons.Outlined.DocumentScanner, Brand.Positive),
@@ -216,6 +220,7 @@ fun PolyCareRoot(
                     composable(SCAN_ROUTE) { ScanScreen(contentPadding = content, onBack = { nav.popBackStack() }, debugImagePath = debugOcrImagePath) }
                     composable(HOUSEHOLDS_ROUTE) { HouseholdsScreen(contentPadding = content, onBack = { nav.popBackStack() }) }
                     composable(DUE_LIST_ROUTE) { org.polycare.app.duelist.DueListScreen(contentPadding = content, onBack = { nav.popBackStack() }) }
+                    composable(TIPS_ROUTE) { TeamTipsScreen(contentPadding = content, onBack = { nav.popBackStack() }) }
                     composable(SYNC_ROUTE) { SyncScreen(contentPadding = content, onBack = { nav.popBackStack() }) }
                     composable(RADAR_ROUTE) { RadarScreen(contentPadding = content, onBack = { nav.popBackStack() }) }
                     composable(CONFLICTS_ROUTE) { ConflictInboxScreen(contentPadding = content, onBack = { nav.popBackStack() }) }

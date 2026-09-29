@@ -19,7 +19,8 @@ class ClockDriftException(val remote: Hlc, val driftMs: Long) :
  * must compare [Hlc] values, not physical times.
  */
 class HlcClock(
-    private val node: String,
+    /** This device's id. Also the `device_id` the gateway sees: an op's HLC node must equal it. */
+    val node: String,
     private val physicalClock: () -> Long,
     private val maxDriftMs: Long = PolyCareConfig.Sync.maxClockDriftMs,
 ) {

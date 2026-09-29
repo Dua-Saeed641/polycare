@@ -29,16 +29,22 @@ import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.DocumentScanner
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Medication
+import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Radar
 import androidx.compose.material.icons.outlined.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,6 +63,7 @@ import org.polycare.app.device.DeviceCheckViewModel
 import org.polycare.app.households.Visit
 import org.polycare.app.knowledge.KnowledgeRepository
 import org.polycare.app.sync.SyncState
+import org.polycare.app.team.GuidanceCard
 import org.polycare.app.ui.components.AppIconButton
 import org.polycare.app.ui.components.GlassCard
 import org.polycare.app.ui.components.Hairline
@@ -79,6 +86,7 @@ private data class Feature(
 /** Everything that is not already one tap away in the bottom bar (Home / Ask / Triage / Search). */
 private val Features = listOf(
     Feature("Medicines", "Doses & counselling", Icons.Outlined.Medication, Brand.Positive, "medicine"),
+    Feature("Team tips", "Shared by ASHAs", Icons.Outlined.Lightbulb, Brand.Positive, "tips"),
     Feature("Households", "Families & visits", Icons.Outlined.Groups, Brand.Pink, "households"),
     Feature("Due list", "Today's visits", Icons.Outlined.CalendarMonth, Brand.Red, "due-list"),
     Feature("Scan", "MCP cards & reports", Icons.Outlined.DocumentScanner, Brand.Positive, "scan"),
@@ -106,6 +114,19 @@ fun HomeScreen(
     val syncState by status.syncState.collectAsStateWithLifecycle()
     val pending by status.pendingOps.collectAsStateWithLifecycle()
     val conflicts by status.conflictList.collectAsStateWithLifecycle()
+    val cards by status.guidanceCards.collectAsStateWithLifecycle()
+    var openCard by remember { mutableStateOf<GuidanceCard?>(null) }
+    val liveCards = cards.filter { !it.dismissed }
+
+    openCard?.let { card ->
+        AlertDialog(
+            onDismissRequest = { openCard = null },
+            title = { Text(card.title) },
+            text = { Text(card.body + if (card.author.isNotBlank()) "\n\n— ${card.author}" else "") },
+            confirmButton = { TextButton(onClick = { status.dismissGuidance(card.id); openCard = null }) { Text("Got it") } },
+            dismissButton = { TextButton(onClick = { openCard = null }) { Text("Keep for later") } },
+        )
+    }
 
     val topAlert = radar.firstOrNull { it.alert.level == AlertLevel.ALERT }
     val openConflicts = conflicts.count { it.open }
@@ -142,6 +163,10 @@ fun HomeScreen(
                 detail = "${topAlert.alert.signalCount} cases in ${topAlert.alert.villages.size} villages",
                 color = Brand.Red,
             ) { onNavigate("radar") }
+        }
+        liveCards.take(2).forEach { card ->
+            Spacer(Modifier.height(12.dp))
+            AttentionBanner(title = card.title, detail = "Guidance from your supervisor", color = Brand.Positive) { openCard = card }
         }
         if (openConflicts > 0) {
             Spacer(Modifier.height(12.dp))

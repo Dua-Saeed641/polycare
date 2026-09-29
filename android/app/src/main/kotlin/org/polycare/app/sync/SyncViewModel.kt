@@ -23,7 +23,8 @@ class SyncViewModel @Inject constructor(
     val state: StateFlow<SyncState> = sync.state
     val pending: StateFlow<Int> = sync.pendingOps
     val gatewayUrl: StateFlow<String> = settings.gatewayUrl
-    val token: StateFlow<String> = settings.token
+    val enrollmentToken: StateFlow<String> = settings.enrollmentToken
+    val deviceId: String get() = sync.deviceId
     val village: StateFlow<String> = settings.village
     val autoSync: StateFlow<Boolean> = settings.autoSync
     val answers: StateFlow<List<TeamAnswer>> = team.answers
@@ -37,7 +38,7 @@ class SyncViewModel @Inject constructor(
     val testing: StateFlow<Boolean> = _testing.asStateFlow()
 
     fun setGatewayUrl(v: String) = settings.setGatewayUrl(v)
-    fun setToken(v: String) = settings.setToken(v)
+    fun setEnrollmentToken(v: String) = settings.setEnrollmentToken(v)
     fun setVillage(v: String) = settings.setVillage(v)
     fun setAutoSync(v: Boolean) = settings.setAutoSync(v)
 

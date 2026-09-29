@@ -5,6 +5,7 @@ bin/
 local.properties
 *.iml
 .idea/
+.uv-cache/
 captures/
 .externalNativeBuild/
 .cxx/
@@ -40,3 +41,10 @@ android/qdrant-edge/src/main/jniLibs/
 # llama.cpp / whisper.cpp source (fetched by native/fetch-*.sh, pinned by commit in the script, never committed)
 native/llama.cpp/
 native/whisper.cpp/
+
+# Local cloud credentials and temporary validation data
+cloud/.env
+cloud/gateway/.dev-postgres/
+cloud/gateway/.venv/
+.paddleocr-reference/
+.fastembed-cache/

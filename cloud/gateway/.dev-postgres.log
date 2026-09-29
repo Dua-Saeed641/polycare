@@ -1,0 +1,20 @@
+2026-09-29 16:04:36.735 IST [33000] LOG:  starting PostgreSQL 18.1 on x86_64-windows, compiled by msvc-19.44.35221, 64-bit
+2026-09-29 16:04:36.736 IST [33000] LOG:  listening on IPv4 address "127.0.0.1", port 55432
+2026-09-29 16:04:36.785 IST [2436] LOG:  database system was shut down at 2026-09-29 16:03:45 IST
+2026-09-29 16:04:36.791 IST [33000] LOG:  database system is ready to accept connections
+2026-09-29 16:05:28.992 IST [13568] ERROR:  invalid input syntax for type uuid: ""
+2026-09-29 16:05:28.992 IST [13568] CONTEXT:  unnamed portal parameter $4 = ''
+2026-09-29 16:05:28.992 IST [13568] STATEMENT:  SELECT o.op_id, o.device_id, o.hlc_wall_ms, o.hlc_logical, o.hlc_node, o.kind, o.payload, o.prev_hash, o.signature, d.public_key FROM ops o JOIN devices d USING (device_id) WHERE (o.hlc_wall_ms, o.hlc_logical, o.device_id, o.op_id) > ($1, $2, $3, $4) ORDER BY o.hlc_wall_ms, o.hlc_logical, o.device_id, o.op_id LIMIT $5
+2026-09-29 16:05:49.983 IST [13568] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-09-29 16:09:36.783 IST [26700] LOG:  checkpoint starting: time
+2026-09-29 16:09:50.093 IST [26700] LOG:  checkpoint complete: wrote 122 buffers (0.7%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=13.273 s, sync=0.027 s, total=13.311 s; sync files=68, longest=0.005 s, average=0.001 s; distance=703 kB, estimate=703 kB; lsn=0/18A0E88, redo lsn=0/18A0DF8
+2026-09-29 16:19:51.933 IST [31900] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-09-29 16:24:20.571 IST [33000] LOG:  received fast shutdown request
+2026-09-29 16:24:20.572 IST [33000] LOG:  aborting any active transactions
+2026-09-29 16:24:20.580 IST [33000] LOG:  background worker "logical replication launcher" (PID 31080) exited with exit code 1
+2026-09-29 16:24:20.581 IST [26700] LOG:  shutting down
+2026-09-29 16:24:20.583 IST [26700] LOG:  checkpoint starting: shutdown immediate
+2026-09-29 16:24:20.590 IST [26700] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.010 s; sync files=0, longest=0.000 s, average=0.000 s; distance=0 kB, estimate=632 kB; lsn=0/18A0F38, redo lsn=0/18A0F38
+2026-09-29 16:24:20.620 IST [33000] LOG:  database system is shut down

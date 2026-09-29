@@ -130,7 +130,10 @@ fun DeviceCheckScreen(
         SectionLabel("Activity")
         Spacer(Modifier.height(12.dp))
         ActivityCard()
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(24.dp))
+        ExperimentalCard()
+        ChaosPanel()
+        Spacer(Modifier.height(8.dp))
     }
 }
 

@@ -18,6 +18,8 @@ import org.polycare.app.knowledge.GapsRepository
 import org.polycare.app.knowledge.KnowledgeHit
 import org.polycare.app.knowledge.KnowledgeRepository
 import org.polycare.app.team.TeamAnswer
+import org.polycare.app.team.TeamMemoryRepository
+import org.polycare.app.team.TeamTip
 import org.polycare.app.team.TeamGuidanceRepository
 import org.polycare.common.EventLog
 import org.polycare.common.EventLog.Category
@@ -59,9 +61,11 @@ sealed interface AskUi {
         val promptMs: Long? = null,
         /** A supervisor's answer to this same question, received through sync. */
         val teamAnswer: TeamAnswer? = null,
+        /** Tips other ASHAs shared that are close to this question. */
+        val teamTips: List<TeamTip> = emptyList(),
     ) : AskUi
 
-    data class NoAnswer(val gapLogged: Boolean, val teamAnswer: TeamAnswer? = null) : AskUi
+    data class NoAnswer(val gapLogged: Boolean, val teamAnswer: TeamAnswer? = null, val teamTips: List<TeamTip> = emptyList()) : AskUi
     data class Unavailable(val reason: String) : AskUi
 }
 
@@ -79,6 +83,7 @@ class AskViewModel @Inject constructor(
     private val skillRouter: SkillRouter,
     private val whisper: WhisperProvider,
     private val teamGuidance: TeamGuidanceRepository,
+    private val teamMemory: TeamMemoryRepository,
     @ApplicationContext private val context: Context,
     private val events: EventLog,
 ) : ViewModel() {
@@ -145,20 +150,23 @@ class AskViewModel @Inject constructor(
             val result = knowledge.search(value)
             val top = result?.hits?.firstOrNull()
             val team = teamGuidance.find(value)
+            val tips = teamMemory.search(value)
             if (top == null) {
-                if (team == null) gaps.log(value, 0f)
-                _ui.value = AskUi.NoAnswer(gapLogged = team == null, teamAnswer = team)
+                val unanswered = team == null && tips.isEmpty()
+                if (unanswered) gaps.log(value, 0f)
+                _ui.value = AskUi.NoAnswer(gapLogged = unanswered, teamAnswer = team, teamTips = tips)
                 return@launch
             }
 
             val confidence = termOverlap(value, top.text)
             val lowConfidence = confidence < PolyCareConfig.Routing.minSkillScore
-            if (lowConfidence && team == null) gaps.log(value, confidence)
+            val unanswered = lowConfidence && team == null && tips.isEmpty()
+            if (unanswered) gaps.log(value, confidence)
             events.record(Category.ASK, "Ask answered", mapOf("confidence" to "%.2f".format(confidence), "lowConfidence" to lowConfidence))
 
             val ready = llm.get()
             if (ready == null) {
-                _ui.value = AskUi.Answered(top, confidence, gapLogged = lowConfidence && team == null, teamAnswer = team)
+                _ui.value = AskUi.Answered(top, confidence, gapLogged = unanswered, teamAnswer = team, teamTips = tips)
                 return@launch
             }
 
@@ -175,12 +183,15 @@ class AskViewModel @Inject constructor(
             }
 
             _ui.value = AskUi.Answered(
-                top, confidence, gapLogged = lowConfidence && team == null,
-                generating = true, skill = route.label, teamAnswer = team,
+                top, confidence, gapLogged = unanswered,
+                generating = true, skill = route.label, teamAnswer = team, teamTips = tips,
             )
             val prompt = PromptFormat.ask(value, top.text, top.title)
             val text = StringBuilder()
-            ready.engine.generate(prompt).collect { event ->
+            // Drafting "from memory": the model's reply is most likely to reuse words from the other
+            // passages and shared tips just retrieved, so the speculative decoder may propose from them too.
+            val memory = (result?.hits.orEmpty().drop(1).map { it.text } + tips.map { it.text }).joinToString("\n")
+            ready.engine.generate(prompt, draftContext = memory).collect { event ->
                 when (event) {
                     is GenerationEvent.Token -> {
                         text.append(event.piece)

@@ -53,6 +53,10 @@ object PolyCareConfig {
         const val stableWindowMs = 30_000L
         const val chunkBytes = 256 * 1024
         const val maxClockDriftMs = 5L * 60 * 1000
+        /** How often the background job runs when its constraints hold. */
+        const val periodicHours = 6L
+        /** Most a single background run sends on a metered (data-plan) connection. */
+        const val meteredBudgetBytes = 64L * 1024
     }
 
     object Llm {

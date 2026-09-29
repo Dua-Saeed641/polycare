@@ -30,7 +30,7 @@ object AppModule {
         val deviceId = runCatching {
             Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
         }.getOrNull()
-        return HlcClock(node = deviceId ?: "unknown-device", physicalClock = System::currentTimeMillis)
+        return HlcClock(node = deviceId ?: "unknown-device", physicalClock = org.polycare.app.chaos.Chaos::now)
     }
 
     @Provides

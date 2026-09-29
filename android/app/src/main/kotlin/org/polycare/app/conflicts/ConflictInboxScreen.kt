@@ -36,6 +36,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
+import org.polycare.app.team.TipContradictionChecker
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
@@ -50,8 +53,25 @@ import org.polycare.common.conflict.Resolution
 import javax.inject.Inject
 
 @HiltViewModel
-class ConflictsViewModel @Inject constructor(private val repo: ConflictsRepository) : ViewModel() {
+class ConflictsViewModel @Inject constructor(
+    private val repo: ConflictsRepository,
+    private val checker: TipContradictionChecker,
+) : ViewModel() {
     val conflicts: StateFlow<List<ConflictRecord>> = repo.conflicts
+
+    private val _verdicts = kotlinx.coroutines.flow.MutableStateFlow<Map<String, String>>(emptyMap())
+    /** conflict id -> what the on-device model said ("checking..." while it thinks). */
+    val verdicts: StateFlow<Map<String, String>> = _verdicts
+
+    /** Asks the on-device model whether a tip conflict is a real disagreement. Advice only. */
+    fun askModel(c: ConflictRecord) {
+        _verdicts.value = _verdicts.value + (c.id to "Asking the on-device model…")
+        viewModelScope.launch {
+            val v = checker.check(c.localValue, c.incomingValue)
+            _verdicts.value = _verdicts.value + (c.id to v.label)
+        }
+    }
+
     fun exportJson() = repo.exportJson()
     fun importJson(text: String) = repo.importJson(text)
     fun resolve(id: String, choice: Resolution) = repo.resolve(id, choice)
@@ -67,6 +87,7 @@ fun ConflictInboxScreen(
     viewModel: ConflictsViewModel = hiltViewModel(),
 ) {
     val conflicts by viewModel.conflicts.collectAsStateWithLifecycle()
+    val verdicts by viewModel.verdicts.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var message by remember { mutableStateOf<String?>(null) }
 
@@ -134,7 +155,7 @@ fun ConflictInboxScreen(
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                open.forEach { c -> OpenConflict(c, viewModel::resolve) }
+                open.forEach { c -> OpenConflict(c, verdicts[c.id], viewModel::resolve) { viewModel.askModel(c) } }
             }
         }
 
@@ -160,14 +181,26 @@ fun ConflictInboxScreen(
 }
 
 @Composable
-private fun OpenConflict(c: ConflictRecord, onResolve: (String, Resolution) -> Unit) {
+private fun OpenConflict(c: ConflictRecord, verdict: String?, onResolve: (String, Resolution) -> Unit, onAskModel: () -> Unit) {
     GlassCard(Modifier.fillMaxWidth(), accent = Accent) {
         Text(c.subject, style = MaterialTheme.typography.titleMedium, color = Brand.Ink)
         Text(c.fieldLabel, style = MaterialTheme.typography.labelLarge, color = Brand.InkMuted)
+        if (c.kind == "tip") {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Two shared tips say almost the same thing in different words. They may or may not disagree.",
+                style = MaterialTheme.typography.bodySmall, color = Brand.InkMuted,
+            )
+        }
         Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Version("On this phone", c.localValue, Modifier.weight(1f))
-            Version("From ${c.incomingAuthor.take(8)}", c.incomingValue, Modifier.weight(1f))
+            Version(if (c.kind == "tip") "Tip A" else "On this phone", c.localValue, Modifier.weight(1f))
+            Version(if (c.kind == "tip") "Tip B" else "From ${c.incomingAuthor.take(8)}", c.incomingValue, Modifier.weight(1f))
+        }
+        if (c.kind == "tip") {
+            Spacer(Modifier.height(12.dp))
+            if (verdict == null) SecondaryButton("Ask the on-device model", onAskModel, accent = Accent)
+            else Text(verdict, style = MaterialTheme.typography.bodyMedium, color = Brand.Ink, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
         }
         Spacer(Modifier.height(14.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

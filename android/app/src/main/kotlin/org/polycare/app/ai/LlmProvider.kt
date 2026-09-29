@@ -30,6 +30,7 @@ import javax.inject.Singleton
 class LlmProvider @Inject constructor(
     @ApplicationContext context: Context,
     private val events: EventLog,
+    private val settings: org.polycare.app.settings.AppSettings,
 ) {
     sealed interface State {
         data object NotLoaded : State
@@ -64,7 +65,7 @@ class LlmProvider @Inject constructor(
                 return State.Unavailable("Model file failed verification")
             }
         }
-        val engine = runCatching { LlamaEngine.load(File(modelsRoot, LlmArtifacts.baseModel.path)) }
+        val engine = runCatching { LlamaEngine.load(File(modelsRoot, LlmArtifacts.baseModel.path), gpuLayers = if (settings.useGpu.value) -1 else 0) }
             .getOrElse { e ->
                 events.record(Category.MODEL, "LLM failed to load", mapOf("error" to e.javaClass.simpleName), Level.ERROR)
                 return State.Unavailable("Model failed to load")

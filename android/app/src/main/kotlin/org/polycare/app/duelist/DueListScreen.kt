@@ -261,7 +261,10 @@ private fun DueItemCard(
                     Text("· ${item.village}", style = MaterialTheme.typography.bodySmall, color = Brand.InkMuted)
                 }
                 Spacer(Modifier.height(4.dp))
-                Text(item.reason, style = MaterialTheme.typography.bodySmall, color = if (isHighRisk) Brand.Rose else Brand.Ink)
+                Text(item.reason, style = MaterialTheme.typography.bodySmall, color = if (isHighRisk) Brand.Red else Brand.Ink)
+                Spacer(Modifier.height(2.dp))
+                val overdue = (dueDay(item) ?: 0L) < 0
+                Text(dueLabel(item), style = MaterialTheme.typography.labelLarge, color = if (overdue) Brand.Red else Brand.InkMuted)
             }
             Spacer(Modifier.width(8.dp))
             Column(horizontalAlignment = Alignment.End) {

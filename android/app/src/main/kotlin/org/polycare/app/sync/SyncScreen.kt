@@ -58,7 +58,7 @@ fun SyncScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val pending by viewModel.pending.collectAsStateWithLifecycle()
     val url by viewModel.gatewayUrl.collectAsStateWithLifecycle()
-    val token by viewModel.token.collectAsStateWithLifecycle()
+    val enrollmentToken by viewModel.enrollmentToken.collectAsStateWithLifecycle()
     val village by viewModel.village.collectAsStateWithLifecycle()
     val auto by viewModel.autoSync.collectAsStateWithLifecycle()
     val answers by viewModel.answers.collectAsStateWithLifecycle()
@@ -118,14 +118,27 @@ fun SyncScreen(
                 Hairline()
                 MetricRow("Kept on this phone", "${done.stats.keptLocalOps} records", valueColor = Brand.Positive)
                 Hairline()
-                MetricRow("Sent as “+1” only", "${done.stats.plusOnes}")
-                Hairline()
                 MetricRow("Data sent", bytesLabel(done.stats.bytesSent))
                 Hairline()
                 MetricRow("Data not sent", bytesLabel(done.stats.bytesNotSent), valueColor = Brand.Positive)
                 if (done.stats.answersReceived > 0 || done.stats.alertsReceived > 0) {
                     Hairline()
                     MetricRow("Received", "${done.stats.answersReceived} answers · ${done.stats.alertsReceived} alerts")
+                }
+                if (done.stats.tipsReceived > 0 || done.stats.guidanceReceived > 0) {
+                    Hairline()
+                    MetricRow("Team", "${done.stats.tipsReceived} tips · ${done.stats.guidanceReceived} guidance cards")
+                }
+                if (done.stats.topicsUpdated.isNotEmpty()) {
+                    Hairline()
+                    Column(Modifier.padding(vertical = 10.dp)) {
+                        Text("Updated topics", style = MaterialTheme.typography.bodyMedium, color = Brand.InkMuted)
+                        done.stats.topicsUpdated.forEach { Text("· $it", style = MaterialTheme.typography.bodyMedium, color = Brand.Ink) }
+                    }
+                }
+                if (done.stats.tipConflicts > 0) {
+                    Hairline()
+                    MetricRow("To review", "${done.stats.tipConflicts} tips may disagree", valueColor = Brand.Red)
                 }
             }
         }
@@ -142,7 +155,7 @@ fun SyncScreen(
                     Spacer(Modifier.height(4.dp))
                     Text(
                         "These are encrypted on the phone and never sent. Only de-identified symptom signals for the Outbreak Radar, " +
-                            "and questions you couldn't get answered, can sync.",
+                            "and questions you couldn't get answered, can sync. Everything sent is signed with this phone's key.",
                         style = MaterialTheme.typography.bodySmall, color = Brand.InkMuted,
                     )
                 }
@@ -174,19 +187,28 @@ fun SyncScreen(
         GlassCard(Modifier.fillMaxWidth()) {
             LabelledField(
                 "Gateway address", url, keyboardType = KeyboardType.Uri,
-                supporting = "For example http://192.168.1.20:8080", onChange = viewModel::setGatewayUrl,
+                supporting = "Use https://. Plain http:// only works in debug builds.", onChange = viewModel::setGatewayUrl,
             )
             Spacer(Modifier.height(12.dp))
-            LabelledField("Access token (optional)", token, imeAction = ImeAction.Next, onChange = viewModel::setToken)
+            LabelledField(
+                "Enrollment token", enrollmentToken, imeAction = ImeAction.Next,
+                supporting = "Given to you with the gateway. It lets this phone register its signing key once.",
+                onChange = viewModel::setEnrollmentToken,
+            )
             Spacer(Modifier.height(12.dp))
             LabelledField(
                 "Your village", village, imeAction = ImeAction.Done,
                 supporting = "Attached to symptom signals. Never a street or a household.", onChange = viewModel::setVillage,
             )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "This phone's ID: ${viewModel.deviceId}",
+                style = MaterialTheme.typography.bodySmall, color = Brand.InkMuted,
+            )
             Spacer(Modifier.height(4.dp))
             ToggleRow(
                 "Sync automatically when the connection is steady", auto, viewModel::setAutoSync, accent = Accent,
-                supporting = "Waits 30 seconds of steady signal before starting.",
+                supporting = "Runs in the background when there is a connection and the battery is not low, even if the app is closed. On mobile data it sends only small batches.",
             )
             Spacer(Modifier.height(8.dp))
             if (testing) {
@@ -205,6 +227,11 @@ fun SyncScreen(
                 )
             }
         }
+
+        Spacer(Modifier.height(24.dp))
+        SectionLabel("Updates")
+        Spacer(Modifier.height(10.dp))
+        UpdatesCard()
         Spacer(Modifier.height(32.dp))
     }
 }

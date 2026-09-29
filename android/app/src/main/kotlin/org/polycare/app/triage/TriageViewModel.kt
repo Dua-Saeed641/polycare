@@ -34,6 +34,11 @@ data class TriageUiState(
     val village: String = "",
     /** True once this exact selection was logged to the Outbreak Radar. */
     val reported: Boolean = false,
+    /** False when it was logged on this phone only (the search model is not installed). */
+    val shareable: Boolean = true,
+    /** Age band and sex attached to the signal; defaults follow the category and can be refined. */
+    val ageBand: String? = null,
+    val sex: String? = null,
 )
 
 /** M2: danger-sign triage. The decision always comes from [TriageEngine]'s rule table (invariant 10). */
@@ -58,7 +63,7 @@ class TriageViewModel @Inject constructor(
     fun onCategoryChange(category: TriageCategory) {
         explanationJob?.cancel()
         _state.value = _state.value.let {
-            TriageUiState(category = category, result = TriageEngine.evaluate(category, emptySet()), villages = it.villages, village = it.village)
+            TriageUiState(category = category, result = TriageEngine.evaluate(category, emptySet()), villages = it.villages, village = it.village, sex = it.sex)
         }
     }
 
@@ -70,11 +75,22 @@ class TriageViewModel @Inject constructor(
      * Logs this case to the Outbreak Radar as a de-identified signal (danger signs + village + day).
      * Only ever an explicit tap: nothing is reported automatically.
      */
+    fun setSex(v: String) { _state.value = _state.value.copy(sex = v, reported = false) }
+
+    fun setAgeBand(v: String) { _state.value = _state.value.copy(ageBand = v, reported = false) }
+
     fun reportToRadar() {
         val cur = _state.value
-        if (signals.record(cur.category, cur.selected, cur.village)) {
-            settings.setVillage(cur.village)
-            _state.value = cur.copy(reported = true)
+        viewModelScope.launch {
+            val result = signals.record(
+                cur.category, cur.selected, cur.village,
+                ageBand = cur.ageBand ?: signals.defaultAgeBand(cur.category),
+                sex = cur.sex ?: if (cur.category == TriageCategory.POSTPARTUM) "F" else "U",
+            )
+            if (result != SignalsRepository.Recorded.NOTHING) {
+                settings.setVillage(cur.village)
+                _state.value = _state.value.copy(reported = true, shareable = result == SignalsRepository.Recorded.SHAREABLE)
+            }
         }
     }
 

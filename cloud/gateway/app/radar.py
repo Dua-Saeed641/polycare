@@ -1,5 +1,8 @@
 """Outbreak Radar: the gateway's copy of the phone's algorithm (android/core-common/.../OutbreakRadar.kt).
 
+Signals here are the de-identified `SIGNAL` ops phones pushed (384-value e5 embeddings). They carry
+an ISO week rather than a timestamp, so the window is whole weeks (default: this week and last).
+
 A *new dense region of vector space* across several villages is the alert, not a keyword count.
 Signals inside the recent window are grouped by leader clustering on cosine similarity; a group
 with enough signals from enough distinct villages is an ALERT, a large single-village group a WATCH.
@@ -13,7 +16,7 @@ import os
 from collections import Counter
 from dataclasses import dataclass, field
 
-WINDOW_MS = int(os.getenv("RADAR_WINDOW_DAYS", "7")) * 24 * 60 * 60 * 1000
+WINDOW_MS = int(os.getenv("RADAR_WINDOW_DAYS", "14")) * 24 * 60 * 60 * 1000
 CLUSTER_COSINE = float(os.getenv("RADAR_CLUSTER_COSINE", "0.80"))
 MIN_SIGNALS = int(os.getenv("RADAR_MIN_SIGNALS", "3"))
 MIN_VILLAGES = int(os.getenv("RADAR_MIN_VILLAGES", "2"))

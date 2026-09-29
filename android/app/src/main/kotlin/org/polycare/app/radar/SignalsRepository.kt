@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
+import org.polycare.app.ai.EmbedderProvider
 import org.polycare.app.knowledge.TriageCategory
 import org.polycare.app.knowledge.TriageEngine
 import org.polycare.app.sync.OpLogStore
@@ -20,6 +21,7 @@ import org.polycare.common.radar.RadarAlert
 import org.polycare.common.radar.RadarSignal
 import org.polycare.common.sync.Op
 import org.polycare.common.sync.OpEntity
+import org.polycare.common.sync.SignalCodec
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -45,6 +47,7 @@ class SignalsRepository @Inject constructor(
     @ApplicationContext context: Context,
     private val opLog: OpLogStore,
     private val clock: HlcClock,
+    private val embedders: EmbedderProvider,
     private val events: EventLog,
 ) {
     private val vocabulary: List<String> =
@@ -63,39 +66,76 @@ class SignalsRepository @Inject constructor(
     /** Encodes marked signs as the fixed-length multi-hot vector the radar clusters on. */
     fun encode(signIds: Set<String>): FloatArray = FloatArray(vocabulary.size) { if (vocabulary[it] in signIds) 1f else 0f }
 
+    /** Outcome of [record]: nothing was reported, or it was, and whether it can be shared with the team. */
+    enum class Recorded { NOTHING, THIS_PHONE_ONLY, SHAREABLE }
+
+    /** Default age band for a triage category; the ASHA can refine it before reporting. */
+    fun defaultAgeBand(category: TriageCategory): String = when (category) {
+        TriageCategory.NEWBORN -> "0-1"
+        TriageCategory.CHILD -> "1-4"
+        TriageCategory.POSTPARTUM -> "20-29"
+    }
+
     /**
-     * Records one de-identified signal for a triage case. Returns false (and records nothing) if
-     * there is nothing to report or no village to attach it to. Care-at-home cases with no signs
-     * produce no signal: the radar is about danger signs.
+     * Records one de-identified signal for a triage case. Returns [Recorded.NOTHING] if there is
+     * nothing to report or no village to attach it to (care-at-home cases with no signs produce no
+     * signal: the radar is about danger signs).
+     *
+     * Two vectors are kept. A small multi-hot vector over the danger-sign vocabulary drives this
+     * phone's own radar and needs nothing installed. The gateway's process needs an e5 embedding
+     * of a fixed, de-identified sentence (dimension 384, float16), a 16-bit SimHash, a village
+     * code, the ISO week, an age band and a sex ([SignalCodec]); those are computed **now** and
+     * stored in the op, so a retried push is byte-identical and its signature stays valid. If the
+     * search model is not installed the signal is kept on this phone only.
      */
-    fun record(category: TriageCategory, signIds: Set<String>, village: String): Boolean {
+    suspend fun record(
+        category: TriageCategory,
+        signIds: Set<String>,
+        village: String,
+        ageBand: String = defaultAgeBand(category),
+        sex: String = if (category == TriageCategory.POSTPARTUM) "F" else "U",
+    ): Recorded {
         val ids = signIds.filter { it in vocabulary }.toSortedSet()
         val place = village.trim()
-        if (ids.isEmpty() || place.isEmpty()) return false
+        if (ids.isEmpty() || place.isEmpty()) return Recorded.NOTHING
 
         val labels = TriageEngine.signs(category).filter { it.id in ids }.map { it.label }
         val label = labels.joinToString("; ").take(200)
         val now = clock.now().wallMs
-        val day = now / DAY_MS
-        val dedupKey = "${category.name}|${ids.joinToString(",")}|${place.lowercase()}|$day"
-        val vector = encode(ids)
+        val payload = linkedMapOf(
+            "modelId" to PolyCareConfig.Radar.signalModelId,
+            "vector" to encode(ids).joinToString(",") { "%.0f".format(it) },
+            "village" to place,
+            "category" to category.name,
+            "label" to label,
+            "wallMs" to now.toString(),
+        )
+
+        // The sentence embedded contains only the marked danger-sign wording and the category,
+        // never a name, never free text typed by the ASHA.
+        val ready = embedders.get()
+        val embedding = ready?.let { r ->
+            runCatching { r.embedder.embedPassages(listOf("${category.label}. Danger signs: $label")).first() }.getOrNull()
+        }
+        if (ready != null && embedding != null) {
+            payload["dense_f16"] = SignalCodec.denseF16Base64(embedding)
+            payload["emb_model_id"] = ready.embedder.modelId
+            payload["simhash"] = SignalCodec.simhash16(embedding).toString()
+            payload["village_code"] = SignalCodec.villageCode(place)
+            payload["week"] = SignalCodec.isoWeek(now).toString()
+            payload["age_band"] = ageBand
+            payload["sex"] = sex
+        }
 
         val stored = opLog.append(
-            OpEntity.SIGNAL, Op.UPSERT, entityId = "sig-" + java.lang.Long.toString(now, 36) + "-" + ids.hashCode().toString(36),
-            payload = mapOf(
-                "modelId" to PolyCareConfig.Radar.signalModelId,
-                "vector" to vector.joinToString(",") { "%.0f".format(it) },
-                "village" to place,
-                "category" to category.name,
-                "label" to label,
-                "wallMs" to now.toString(),
-                "dedupKey" to dedupKey,
-            ),
+            OpEntity.SIGNAL, Op.UPSERT,
+            entityId = "sig-" + java.lang.Long.toString(now, 36) + "-" + ids.hashCode().toString(36),
+            payload = payload,
         )
-        events.record(Category.RADAR, "Signal recorded", mapOf("category" to category.name, "signs" to ids.size))
+        events.record(Category.RADAR, "Signal recorded", mapOf("category" to category.name, "signs" to ids.size, "shareable" to (embedding != null)))
         _signals.value = listOf(toSignal(stored.op)!!) + _signals.value
         _items.value = computeItems()
-        return true
+        return if (embedding != null) Recorded.SHAREABLE else Recorded.THIS_PHONE_ONLY
     }
 
     /** Replaces the alerts the cloud computed across all villages (sync pull). */

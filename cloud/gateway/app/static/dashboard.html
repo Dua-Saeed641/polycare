@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PolyCare Supervisor</title>
+<style>
+  :root {
+    --paper: #F8F8F8; --white: #fff; --ink: #0E0A0D; --muted: #5C505A; --plum: #5E0B53; --plum-deep: #3A0633;
+    --rose: #FB2E66; --red: #C4111C; --green: #1F7A5A; --line: #E9DCE5;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 20px 24px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); background: var(--white); }
+  header h1 { font-size: 18px; letter-spacing: .14em; text-transform: uppercase; margin: 0; color: var(--plum-deep); font-weight: 600; }
+  header span { color: var(--muted); font-size: 14px; }
+  main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 24px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .card { background: var(--white); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+  .stat b { display: block; font-size: 30px; color: var(--plum); line-height: 1.1; }
+  .stat small { color: var(--muted); }
+  h2 { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+  .alert { border-left: 5px solid var(--rose); }
+  .alert.ALERT { border-left-color: var(--red); background: #FFF5F6; }
+  .pill { display: inline-block; padding: 2px 12px; border-radius: 999px; font-size: 12px; letter-spacing: .1em; color: #fff; background: var(--plum); margin-right: 8px; }
+  .alert.ALERT .pill { background: var(--red); }
+  .muted { color: var(--muted); }
+  .gap { display: grid; gap: 8px; }
+  textarea, input { width: 100%; font: inherit; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--white); color: var(--ink); }
+  textarea:focus, input:focus, button:focus-visible { outline: 3px solid #BC16A6; outline-offset: 2px; }
+  button { font: inherit; font-weight: 600; min-height: 48px; padding: 0 22px; border-radius: 12px; border: 0; background: var(--plum); color: #fff; cursor: pointer; justify-self: start; }
+  button:disabled { background: var(--line); color: var(--muted); cursor: default; }
+  .row { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  .ok { color: var(--green); }
+  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+</style>
+</head>
+<body>
+<header><h1>PolyCare</h1><span>Supervisor dashboard</span></header>
+<main>
+  <section class="card" aria-label="Sign in">
+    <label for="token" class="muted">Supervisor token (POLYCARE_SUPERVISOR_TOKEN)</label>
+    <input id="token" type="password" autocomplete="off">
+    <label for="author" class="muted" style="display:block;margin-top:10px">Your name, shown to the ASHA with your answer</label>
+    <input id="author" value="Supervisor">
+    <p id="auth" class="muted" role="status" style="margin:10px 0 0">Enter the token to load data.</p>
+  </section>
+
+  <section class="stats" aria-label="Totals" id="stats"></section>
+
+  <section aria-labelledby="alerts-h">
+    <h2 id="alerts-h">Outbreak Radar</h2>
+    <ul id="alerts" aria-live="polite"><li class="card muted">Waiting for the token…</li></ul>
+  </section>
+
+  <section aria-labelledby="gaps-h">
+    <h2 id="gaps-h">Questions ASHAs could not get answered offline</h2>
+    <ul id="gaps" aria-live="polite"><li class="card muted">Waiting for the token…</li></ul>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const ago = (ms) => { const m = Math.max(0, Math.round((Date.now() - ms) / 60000)); return m < 2 ? 'just now' : m < 120 ? m + ' min ago' : m < 2880 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' days ago'; };
+const headers = () => ({ 'Authorization': 'Bearer ' + $('token').value, 'Content-Type': 'application/json' });
+try { $('token').value = sessionStorage.getItem('pc-token') || ''; } catch (e) {}
+
+async function api(path, options) {
+  const res = await fetch(path, { headers: headers(), ...options });
+  if (!res.ok) throw new Error(res.status);
+  return res.json();
+}
+
+async function refresh() {
+  if (!$('token').value) return;
+  try {
+    const [stats, alerts, gaps] = await Promise.all([api('/v1/supervisor/stats'), api('/v1/radar/alerts'), api('/v1/supervisor/gaps')]);
+    try { sessionStorage.setItem('pc-token', $('token').value); } catch (e) {}
+    $('auth').textContent = 'Signed in.';
+    $('stats').innerHTML = [['Cases reported', stats.signals], ['Questions asked', stats.gaps], ['Answers sent', stats.answers], ['Phones', stats.devices]]
+      .map(([l, v]) => `<div class="card stat"><b>${v}</b><small>${l}</small></div>`).join('');
+
+    const typing = document.activeElement && ['TEXTAREA', 'INPUT'].includes(document.activeElement.tagName) && document.activeElement.id !== 'token' && document.activeElement.id !== 'author';
+    if (!typing) $('alerts').innerHTML = alerts.alerts.length ? alerts.alerts.map((a, i) => `
+      <li class="card alert ${esc(a.level)}">
+        <div class="row"><div><span class="pill">${esc(a.level)}</span><strong>${esc(a.label)}</strong></div>
+        <span class="muted">${a.count} cases · latest ${ago(a.last)}</span></div>
+        <div class="muted">Villages: ${a.villages.map(esc).join(', ') || '—'}</div>
+        <details style="margin-top:10px"><summary>Send guidance to ${a.villages.length === 1 ? 'this village' : 'these villages'}</summary>
+          <div class="gap" style="margin-top:8px">
+            <label class="muted" for="gt${i}">Title</label><input id="gt${i}" maxlength="120" value="${esc(a.label)}">
+            <label class="muted" for="gb${i}">What should ASHAs do?</label><textarea id="gb${i}" rows="3" maxlength="1500"></textarea>
+            <button class="send-guidance" data-i="${i}" data-villages="${esc(a.villages.join(','))}">Send to ${a.villages.length} village${a.villages.length === 1 ? '' : 's'}</button><span class="ok" id="gok${i}" role="status"></span>
+          </div>
+        </details>
+      </li>`).join('') : '<li class="card muted">No clusters detected. The radar needs 3+ similar cases from 2+ villages in the last two weeks.</li>';
+
+    if (!document.activeElement || document.activeElement.tagName !== 'TEXTAREA') {
+      $('gaps').innerHTML = gaps.length ? gaps.map((g, i) => `
+        <li class="card gap">
+          <div class="row"><strong>${esc(g.question)}</strong><span class="muted">asked ${g.asked}× by ${g.devices} phone${g.devices === 1 ? '' : 's'} · ${ago(g.last)}</span></div>
+          <label class="muted" for="a${i}">Your answer</label>
+          <textarea id="a${i}" rows="3" data-q="${esc(g.question)}"></textarea>
+          <button data-i="${i}">Send answer</button><span class="ok" id="ok${i}" role="status"></span>
+        </li>`).join('') : '<li class="card muted">Nothing waiting.</li>';
+    }
+  } catch (e) {
+    $('auth').textContent = e.message === '401' ? 'That token was not accepted.' : e.message === '503' ? 'The gateway has no supervisor token configured.' : 'Could not reach the gateway.';
+  }
+}
+
+$('gaps').addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('button[data-i]'); if (!btn) return;
+  const ta = document.getElementById('a' + btn.dataset.i);
+  if (!ta.value.trim()) return;
+  btn.disabled = true;
+  try {
+    await api('/v1/supervisor/answers', { method: 'POST', body: JSON.stringify({ question: ta.dataset.q, answer: ta.value, author: $('author').value || 'Supervisor' }) });
+    document.getElementById('ok' + btn.dataset.i).textContent = ' Sent. It reaches the phone on its next sync.';
+    setTimeout(refresh, 800);
+  } catch (e) {
+    document.getElementById('ok' + btn.dataset.i).textContent = ' Not sent (' + e.message + ').';
+    btn.disabled = false;
+  }
+});
+$('alerts').addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('button.send-guidance'); if (!btn) return;
+  const i = btn.dataset.i, title = document.getElementById('gt' + i).value.trim(), body = document.getElementById('gb' + i).value.trim();
+  if (!title || !body) return;
+  btn.disabled = true;
+  try {
+    await api('/v1/supervisor/guidance', { method: 'POST', body: JSON.stringify({ title, body, villages: btn.dataset.villages.split(',').filter(Boolean), author: $('author').value || 'Supervisor' }) });
+    document.getElementById('gok' + i).textContent = ' Sent. Phones in those villages get it on their next sync.';
+    document.getElementById('gb' + i).value = '';
+  } catch (e) {
+    document.getElementById('gok' + i).textContent = ' Not sent (' + e.message + ').';
+  }
+  btn.disabled = false;
+});
+$('token').addEventListener('change', refresh);
+refresh(); setInterval(refresh, 10000);
+</script>
+</body>
+</html>

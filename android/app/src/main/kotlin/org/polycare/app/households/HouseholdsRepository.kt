@@ -11,7 +11,6 @@ import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import org.polycare.app.ai.EmbedderProvider
-import org.polycare.app.security.SecureBox
 import org.polycare.app.sync.OpLogStore
 import org.polycare.common.sync.Op
 import org.polycare.common.sync.OpEntity
@@ -21,6 +20,9 @@ import org.polycare.common.Hlc
 import org.polycare.common.HlcClock
 import org.polycare.common.UuidV7
 import java.io.File
+import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -116,9 +118,10 @@ data class VisitSearchResult(
  * "Due list and visit planner", "Visit notes searchable by meaning", "Monthly report and
  * incentive tracker").
  *
- * Every mutation is appended to the encrypted op-log first (invariant 1); the JSON store in
- * app-private storage (`files/households_store.json`, AES-GCM sealed with a Keystore key) is a
- * rebuildable view of it that keeps app start fast.
+ * Persisted as authenticated AES-GCM ciphertext in app-private no-backup storage. The key is
+ * non-exportable and held by Android Keystore. A legacy plaintext file is migrated only after
+ * the encrypted replacement has been atomically written. Every mutation is also appended to the
+ * op-log first (invariant 1); this file is still the source the views load from at startup.
  * Invariant 7: personal health records never leave the phone. The Sync Gate marks every
  * household, member and visit op keep-local, so none of them is ever sent.
  */
@@ -158,7 +161,10 @@ class HouseholdsRepository internal constructor(
     // later one silently loses the later update. limitedParallelism(1) makes writes strictly
     // sequential, in call order, so the last call to persist() always wins on disk.
     private val writeDispatcher = Dispatchers.IO.limitedParallelism(1)
-    private val storeFile: File? = context?.let { File(it.filesDir, "households_store.json") }
+    private val storeFile: File? = context?.let { File(it.noBackupFilesDir, "households_store.enc") }
+    private val legacyStoreFile: File? = context?.let { File(it.filesDir, "households_store.json") }
+    private val storeCipher = if (context != null) HouseholdStoreCipher() else null
+    @Volatile private var storageHealthy = true
 
     private val _households = MutableStateFlow<List<Household>>(emptyList())
     val households: StateFlow<List<Household>> = _households.asStateFlow()
@@ -172,74 +178,19 @@ class HouseholdsRepository internal constructor(
     private val _dueItems = MutableStateFlow<List<DueItem>>(emptyList())
     val dueItems: StateFlow<List<DueItem>> = _dueItems.asStateFlow()
 
+    private val _storageWarning = MutableStateFlow<String?>(null)
+    val storageWarning: StateFlow<String?> = _storageWarning.asStateFlow()
+
     init {
-        if (!loadFromDisk()) seedInitialDataIfEmpty()
-    }
-
-    private fun seedInitialDataIfEmpty() {
-        if (_households.value.isNotEmpty()) return
-
-        val h1 = Household(idGen.next().toString(), "Sunita Devi", "Rampur", consentGiven = true, clock.now())
-        val h2 = Household(idGen.next().toString(), "Meena Kumari", "Rampur", consentGiven = true, clock.now())
-        val h3 = Household(idGen.next().toString(), "Rekha Sharma", "Chandpur", consentGiven = true, clock.now())
-        _households.value = listOf(h1, h2, h3)
-
-        val m1 = Member(idGen.next().toString(), h1.id, "Sunita Devi", 24, "Mother (Pregnant)", clock.now())
-        val m2 = Member(idGen.next().toString(), h2.id, "Baby of Meena", 0, "Newborn (7 days)", clock.now())
-        val m3 = Member(idGen.next().toString(), h3.id, "Aarav Sharma", 1, "Child", clock.now())
-        _members.value = listOf(m1, m2, m3)
-
-        _dueItems.value = listOf(
-            DueItem(
-                id = idGen.next().toString(),
-                householdId = h1.id,
-                householdHead = h1.headOfHousehold,
-                memberId = m1.id,
-                memberName = m1.name,
-                village = h1.village,
-                visitType = VisitType.ANC,
-                dueDate = "Today",
-                priority = DuePriority.HIGH,
-                reason = "3rd ANC checkup due; history of elevated blood pressure",
-            ),
-            DueItem(
-                id = idGen.next().toString(),
-                householdId = h2.id,
-                householdHead = h2.headOfHousehold,
-                memberId = m2.id,
-                memberName = m2.name,
-                village = h2.village,
-                visitType = VisitType.PNC,
-                dueDate = "Today",
-                priority = DuePriority.TODAY,
-                reason = "Day 7 home PNC visit; cord care & thermal check",
-            ),
-            DueItem(
-                id = idGen.next().toString(),
-                householdId = h3.id,
-                householdHead = h3.headOfHousehold,
-                memberId = m3.id,
-                memberName = m3.name,
-                village = h3.village,
-                visitType = VisitType.IMMUNIZATION,
-                dueDate = "Overdue",
-                priority = DuePriority.HIGH,
-                reason = "Missed Pentavalent-1 & Rotavirus scheduled vaccine",
-            ),
-            DueItem(
-                id = idGen.next().toString(),
-                householdId = h1.id,
-                householdHead = h1.headOfHousehold,
-                memberId = m1.id,
-                memberName = m1.name,
-                village = h1.village,
-                visitType = VisitType.FAMILY_PLANNING,
-                dueDate = "Next week",
-                priority = DuePriority.UPCOMING,
-                reason = "Post-delivery birth spacing counselling",
-            ),
-        )
-        persist()
+        if (!loadFromDisk()) {
+            val hasExistingStore = storeFile?.exists() == true || legacyStoreFile?.exists() == true
+            if (hasExistingStore) {
+                // Never write over data that could not be decrypted or parsed. The Households screen
+                // offers "Rebuild from the change log" ([recoverFromOpLog]) as an explicit choice.
+                storageHealthy = false
+                _storageWarning.value = "Saved household records could not be opened. Changes will not be saved on this device."
+            }
+        }
     }
 
     fun addHousehold(headOfHousehold: String, village: String, consentGiven: Boolean): Household {
@@ -289,6 +240,8 @@ class HouseholdsRepository internal constructor(
         incentiveRupees: Int = type.defaultIncentiveRupees,
         date: String = java.time.LocalDate.now().toString(),
         dueItemId: String? = null,
+        /** If set, a follow-up due item is scheduled this many days from [date]'s today. */
+        followUpInDays: Int? = null,
     ): Visit? {
         val household = _households.value.firstOrNull { it.id == householdId } ?: return null
         if (!household.consentGiven) {
@@ -312,16 +265,22 @@ class HouseholdsRepository internal constructor(
         opLog?.append(
             OpEntity.VISIT, Op.UPSERT, visit.id,
             mapOf(
-                "householdId" to householdId, "memberId" to (memberId ?: ""), "type" to type.name,
-                "notes" to notes, "date" to date, "highRisk" to highRisk.toString(),
+                "householdId" to householdId, "memberId" to (memberId ?: ""), "memberName" to visit.memberName.orEmpty(),
+                "type" to type.name, "notes" to notes, "date" to date, "highRisk" to highRisk.toString(),
+                "incentive" to incentiveRupees.toString(),
             ),
         )
         _visits.value = listOf(visit) + _visits.value
 
         if (dueItemId != null) {
             _dueItems.value = _dueItems.value.map { item ->
-                if (item.id == dueItemId) item.copy(completed = true) else item
+                if (item.id == dueItemId) item.copy(completed = true).also { done ->
+                    opLog?.append(OpEntity.DUE_ITEM, Op.UPSERT, done.id, dueOpPayload(done))
+                } else item
             }
+        }
+        if (followUpInDays != null) {
+            scheduleFollowUp(householdId, memberId, visit.memberName ?: household.headOfHousehold, type, followUpInDays, highRisk, persistNow = false)
         }
 
         events.record(
@@ -399,6 +358,194 @@ class HouseholdsRepository internal constructor(
                 VisitSearchResult(v, hhName, village, score)
             } else null
         }.sortedByDescending { it.score }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Follow-ups, editing, deletion, consent withdrawal, recovery
+
+    private fun dueOpPayload(d: DueItem): Map<String, String> = mapOf(
+        "householdId" to d.householdId, "householdHead" to d.householdHead, "memberId" to (d.memberId ?: ""),
+        "memberName" to d.memberName, "village" to d.village, "visitType" to d.visitType.name,
+        "dueDate" to d.dueDate, "priority" to d.priority.name, "reason" to d.reason, "completed" to d.completed.toString(),
+    )
+
+    /**
+     * Schedules a follow-up visit [inDays] from today (0 = today). `dueDate` is a real ISO date; the
+     * Due list derives "Overdue / Today / Upcoming" from it every time it is shown. Consent-gated.
+     */
+    fun scheduleFollowUp(
+        householdId: String,
+        memberId: String?,
+        memberName: String,
+        type: VisitType,
+        inDays: Int,
+        highRisk: Boolean = false,
+        reason: String? = null,
+        persistNow: Boolean = true,
+    ): DueItem? {
+        val household = _households.value.firstOrNull { it.id == householdId } ?: return null
+        if (!household.consentGiven) return null
+        val date = java.time.LocalDate.now().plusDays(inDays.toLong().coerceAtLeast(0)).toString()
+        val item = DueItem(
+            id = idGen.next().toString(), householdId = householdId, householdHead = household.headOfHousehold,
+            memberId = memberId, memberName = memberName, village = household.village, visitType = type,
+            dueDate = date,
+            priority = when { highRisk -> DuePriority.HIGH; inDays <= 0 -> DuePriority.TODAY; else -> DuePriority.UPCOMING },
+            reason = reason ?: "Follow-up: ${type.label}",
+        )
+        opLog?.append(OpEntity.DUE_ITEM, Op.UPSERT, item.id, dueOpPayload(item))
+        _dueItems.value = listOf(item) + _dueItems.value
+        events.record(Category.HOUSEHOLDS, "Follow-up scheduled", mapOf("type" to type.name, "inDays" to inDays))
+        if (persistNow) persist()
+        return item
+    }
+
+    /** Edits a household's head and village (op-first). Consent is changed only by [withdrawConsent]. */
+    fun updateHousehold(householdId: String, head: String, village: String): Boolean {
+        val h = _households.value.firstOrNull { it.id == householdId } ?: return false
+        if (head.isBlank() || village.isBlank()) return false
+        if (h.headOfHousehold != head.trim()) setHouseholdField(householdId, "headOfHousehold", head.trim())
+        if (h.village != village.trim()) setHouseholdField(householdId, "village", village.trim())
+        // Keep denormalised copies on due items in step.
+        _dueItems.value = _dueItems.value.map {
+            if (it.householdId == householdId) it.copy(householdHead = head.trim(), village = village.trim()) else it
+        }
+        persist()
+        return true
+    }
+
+    /** Edits a member (op-first). Returns false for a blank name or unknown member. */
+    fun updateMember(memberId: String, name: String, age: Int, relation: String): Boolean {
+        val m = _members.value.firstOrNull { it.id == memberId } ?: return false
+        if (name.isBlank()) return false
+        if (m.name != name.trim()) setMemberField(memberId, "name", name.trim())
+        if (m.age != age) setMemberField(memberId, "age", age.toString())
+        if (m.relation != relation.trim()) setMemberField(memberId, "relation", relation.trim().ifBlank { "Member" })
+        return true
+    }
+
+    /**
+     * Erases a member and everything recorded about them (visits, due items). Each removal is a
+     * delete op, so a rebuild from the change log agrees with what the ASHA sees.
+     */
+    fun deleteMember(memberId: String): Boolean {
+        val m = _members.value.firstOrNull { it.id == memberId } ?: return false
+        _visits.value.filter { it.memberId == memberId }.forEach { opLog?.append(OpEntity.VISIT, Op.DELETE, it.id, emptyMap()) }
+        _dueItems.value.filter { it.memberId == memberId }.forEach { opLog?.append(OpEntity.DUE_ITEM, Op.DELETE, it.id, emptyMap()) }
+        opLog?.append(OpEntity.MEMBER, Op.DELETE, m.id, mapOf("householdId" to m.householdId))
+        _visits.value = _visits.value.filterNot { it.memberId == memberId }
+        _dueItems.value = _dueItems.value.filterNot { it.memberId == memberId }
+        _members.value = _members.value.filterNot { it.id == memberId }
+        events.record(Category.HOUSEHOLDS, "Member deleted", emptyMap())
+        persist()
+        return true
+    }
+
+    /** Erases a household and all its members, visits and due items. */
+    fun deleteHousehold(householdId: String): Boolean {
+        val h = _households.value.firstOrNull { it.id == householdId } ?: return false
+        eraseRecordsOf(householdId)
+        opLog?.append(OpEntity.HOUSEHOLD, Op.DELETE, h.id, emptyMap())
+        _households.value = _households.value.filterNot { it.id == householdId }
+        events.record(Category.HOUSEHOLDS, "Household deleted", emptyMap())
+        persist()
+        return true
+    }
+
+    /**
+     * The family withdrew consent: everything recorded about them is erased and no further member or
+     * visit can be added. The household entry itself stays (marked without consent) so the ASHA can
+     * see who declined and does not ask again by mistake.
+     */
+    fun withdrawConsent(householdId: String): Boolean {
+        val h = _households.value.firstOrNull { it.id == householdId } ?: return false
+        eraseRecordsOf(householdId)
+        opLog?.append(OpEntity.HOUSEHOLD, Op.UPSERT, h.id, mapOf("field" to "consent", "value" to "false"))
+        _households.value = _households.value.map { if (it.id == householdId) it.copy(consentGiven = false, hlc = clock.now()) else it }
+        events.record(Category.HOUSEHOLDS, "Consent withdrawn", emptyMap(), EventLog.Level.WARN)
+        persist()
+        return true
+    }
+
+    private fun eraseRecordsOf(householdId: String) {
+        _members.value.filter { it.householdId == householdId }.forEach { opLog?.append(OpEntity.MEMBER, Op.DELETE, it.id, mapOf("householdId" to householdId)) }
+        _visits.value.filter { it.householdId == householdId }.forEach { opLog?.append(OpEntity.VISIT, Op.DELETE, it.id, emptyMap()) }
+        _dueItems.value.filter { it.householdId == householdId }.forEach { opLog?.append(OpEntity.DUE_ITEM, Op.DELETE, it.id, emptyMap()) }
+        _members.value = _members.value.filterNot { it.householdId == householdId }
+        _visits.value = _visits.value.filterNot { it.householdId == householdId }
+        _dueItems.value = _dueItems.value.filterNot { it.householdId == householdId }
+    }
+
+    /**
+     * Explicit recovery when the encrypted store cannot be opened: rebuilds households, members,
+     * visits and due items by replaying the op-log (creations, field patches, deletions), then
+     * makes storage writable again. Records that were created before the change log existed are not
+     * in it and cannot be recovered. Returns the number of households rebuilt.
+     */
+    fun recoverFromOpLog(): Int {
+        val log = opLog ?: return 0
+        val hh = LinkedHashMap<String, Household>()
+        val mm = LinkedHashMap<String, Member>()
+        val vv = LinkedHashMap<String, Visit>()
+        val dd = LinkedHashMap<String, DueItem>()
+        for (stored in log.all()) {
+            val op = stored.op
+            val p = op.payload
+            when (op.entity) {
+                OpEntity.HOUSEHOLD -> if (op.action == Op.DELETE) hh.remove(op.entityId) else {
+                    val cur = hh[op.entityId]
+                    if (p["field"] != null) {
+                        if (cur != null) hh[op.entityId] = when (p["field"]) {
+                            "headOfHousehold" -> cur.copy(headOfHousehold = p["value"].orEmpty(), hlc = op.hlc)
+                            "village" -> cur.copy(village = p["value"].orEmpty(), hlc = op.hlc)
+                            "consent" -> cur.copy(consentGiven = p["value"] == "true", hlc = op.hlc)
+                            else -> cur
+                        }
+                    } else hh[op.entityId] = Household(op.entityId, p["headOfHousehold"].orEmpty(), p["village"].orEmpty(), p["consent"] == "true", op.hlc)
+                }
+                OpEntity.MEMBER -> if (op.action == Op.DELETE) mm.remove(op.entityId) else {
+                    val cur = mm[op.entityId]
+                    if (p["field"] != null) {
+                        if (cur != null) mm[op.entityId] = when (p["field"]) {
+                            "name" -> cur.copy(name = p["value"].orEmpty(), hlc = op.hlc)
+                            "age" -> cur.copy(age = p["value"]?.toIntOrNull() ?: cur.age, hlc = op.hlc)
+                            "relation" -> cur.copy(relation = p["value"].orEmpty(), hlc = op.hlc)
+                            else -> cur
+                        }
+                    } else mm[op.entityId] = Member(op.entityId, p["householdId"].orEmpty(), p["name"].orEmpty(), p["age"]?.toIntOrNull() ?: 0, p["relation"].orEmpty(), op.hlc)
+                }
+                OpEntity.VISIT -> if (op.action == Op.DELETE) vv.remove(op.entityId) else {
+                    val type = runCatching { VisitType.valueOf(p["type"].orEmpty()) }.getOrNull() ?: continue
+                    vv[op.entityId] = Visit(
+                        id = op.entityId, householdId = p["householdId"].orEmpty(),
+                        memberId = p["memberId"]?.ifBlank { null }, memberName = p["memberName"]?.ifBlank { null },
+                        type = type, notes = p["notes"].orEmpty(), date = p["date"].orEmpty(),
+                        highRisk = p["highRisk"] == "true", incentiveRupees = p["incentive"]?.toIntOrNull() ?: type.defaultIncentiveRupees,
+                        hlc = op.hlc,
+                    )
+                }
+                OpEntity.DUE_ITEM -> if (op.action == Op.DELETE) dd.remove(op.entityId) else {
+                    val type = runCatching { VisitType.valueOf(p["visitType"].orEmpty()) }.getOrNull() ?: continue
+                    dd[op.entityId] = DueItem(
+                        id = op.entityId, householdId = p["householdId"].orEmpty(), householdHead = p["householdHead"].orEmpty(),
+                        memberId = p["memberId"]?.ifBlank { null }, memberName = p["memberName"].orEmpty(), village = p["village"].orEmpty(),
+                        visitType = type, dueDate = p["dueDate"].orEmpty(),
+                        priority = runCatching { DuePriority.valueOf(p["priority"].orEmpty()) }.getOrDefault(DuePriority.UPCOMING),
+                        reason = p["reason"].orEmpty(), completed = p["completed"] == "true",
+                    )
+                }
+                else -> Unit
+            }
+        }
+        _households.value = hh.values.reversed()
+        _members.value = mm.values.filter { it.householdId in hh }.reversed()
+        _visits.value = vv.values.filter { it.householdId in hh }.reversed()
+        _dueItems.value = dd.values.filter { it.householdId in hh }.reversed()
+        storageHealthy = true
+        _storageWarning.value = null
+        events.record(Category.HOUSEHOLDS, "Rebuilt from change log", mapOf("households" to hh.size, "members" to mm.size, "visits" to vv.size))
+        persist()
+        return hh.size
     }
 
     /** Current value of an editable member field, for conflict detection. */
@@ -490,6 +637,7 @@ class HouseholdsRepository internal constructor(
 
     private fun persist() {
         val file = storeFile ?: return
+        if (!storageHealthy) return
         val snapshot = JSONObject().apply {
             put("households", JSONArray(_households.value.map { it.toJson() }))
             put("members", JSONArray(_members.value.map { it.toJson() }))
@@ -498,31 +646,53 @@ class HouseholdsRepository internal constructor(
         }
         scope.launch(writeDispatcher) {
             runCatching {
-                // Encrypted at rest (Android Keystore AES-GCM); temp + rename so a kill mid-write
-                // leaves the previous complete file, never a truncated one.
+                val encrypted = requireNotNull(storeCipher).encrypt(snapshot.toString().toByteArray(Charsets.UTF_8))
                 val tmp = File(file.parentFile, file.name + ".tmp")
-                tmp.writeText(SecureBox.seal(snapshot.toString()))
-                if (!tmp.renameTo(file)) { file.delete(); tmp.renameTo(file) }
+                FileOutputStream(tmp).use { stream ->
+                    stream.write(encrypted)
+                    stream.fd.sync()
+                }
+                Files.move(
+                    tmp.toPath(),
+                    file.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+                // Remove the old plaintext copy only after the encrypted write is durable.
+                if (legacyStoreFile?.exists() == true && !legacyStoreFile.delete()) {
+                    _storageWarning.value = "Records are encrypted, but an older plaintext copy could not be removed."
+                } else {
+                    _storageWarning.value = null
+                }
             }
-                .onFailure { events.record(Category.HOUSEHOLDS, "Failed to persist households store", mapOf("error" to it.javaClass.simpleName), EventLog.Level.ERROR) }
+                .onFailure {
+                    _storageWarning.value = "Household changes could not be saved securely on this device."
+                    events.record(Category.HOUSEHOLDS, "Failed to persist households store", mapOf("error" to it.javaClass.simpleName), EventLog.Level.ERROR)
+                }
         }
     }
 
     /** Returns true if a persisted store was found and loaded (skips demo-data seeding). */
     private fun loadFromDisk(): Boolean {
-        val file = storeFile ?: return false
-        if (!file.exists()) return false
+        val encryptedFile = storeFile ?: return false
+        val legacyFile = legacyStoreFile
+        if (!encryptedFile.exists() && legacyFile?.exists() != true) return false
         return runCatching {
-            val raw = file.readText()
-            // A store written before encryption existed starts with '{'; read it once, then
-            // rewrite it sealed below.
-            val legacyPlaintext = raw.trimStart().startsWith("{")
-            val root = JSONObject(if (legacyPlaintext) raw else (SecureBox.open(raw) ?: error("store failed to decrypt")))
+            val plaintext = if (encryptedFile.exists()) {
+                requireNotNull(storeCipher).decrypt(encryptedFile.readBytes())
+            } else {
+                requireNotNull(legacyFile).readBytes()
+            }
+            val root = JSONObject(String(plaintext, Charsets.UTF_8))
             _households.value = root.getJSONArray("households").toObjectList(::householdFromJson)
             _members.value = root.getJSONArray("members").toObjectList(::memberFromJson)
             _visits.value = root.getJSONArray("visits").toObjectList(::visitFromJson)
             _dueItems.value = root.getJSONArray("dueItems").toObjectList(::dueItemFromJson)
-            if (legacyPlaintext) persist()
+            if (!encryptedFile.exists()) {
+                persist()
+            } else if (legacyFile?.exists() == true && !legacyFile.delete()) {
+                _storageWarning.value = "Records are encrypted, but an older plaintext copy could not be removed."
+            }
             true
         }.getOrElse {
             events.record(Category.HOUSEHOLDS, "Failed to load persisted households store", mapOf("error" to it.javaClass.simpleName), EventLog.Level.ERROR)

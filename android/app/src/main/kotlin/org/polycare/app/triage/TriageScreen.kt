@@ -84,7 +84,7 @@ fun TriageScreen(contentPadding: PaddingValues, onBack: () -> Unit, viewModel: T
 
         if (state.selected.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
-            RadarCard(state.villages, state.village, state.reported, viewModel::setVillage, viewModel::reportToRadar)
+            RadarCard(state, viewModel::setVillage, viewModel::setSex, viewModel::setAgeBand, viewModel::reportToRadar)
         }
 
         Spacer(Modifier.height(24.dp))
@@ -156,10 +156,25 @@ private fun DecisionCard(
 
 /**
  * Optional, explicit: report this case to the Outbreak Radar as a de-identified signal. Shows
- * exactly what would be sent so the choice is informed.
+ * exactly what would be sent (danger signs, village, week, an age band and a sex) so the choice is
+ * informed. No name, no household, no free text.
  */
 @Composable
-private fun RadarCard(villages: List<String>, village: String, reported: Boolean, onVillage: (String) -> Unit, onReport: () -> Unit) {
+private fun RadarCard(
+    state: TriageUiState,
+    onVillage: (String) -> Unit,
+    onSex: (String) -> Unit,
+    onAgeBand: (String) -> Unit,
+    onReport: () -> Unit,
+) {
+    val category = state.category
+    val postpartum = category == TriageCategory.POSTPARTUM
+    val sex = state.sex ?: if (postpartum) "F" else "U"
+    val ageBand = state.ageBand ?: when (category) {
+        TriageCategory.NEWBORN -> "0-1"
+        TriageCategory.CHILD -> "1-4"
+        TriageCategory.POSTPARTUM -> "20-29"
+    }
     GlassCard(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.Radar, contentDescription = null, tint = Brand.Rose, modifier = Modifier.size(22.dp))
@@ -168,25 +183,48 @@ private fun RadarCard(villages: List<String>, village: String, reported: Boolean
         }
         Spacer(Modifier.height(6.dp))
         Text(
-            "Shares only the danger signs, the village and today's date. No name, no household.",
+            "Shares only the danger signs, the village, this week, an age band and a sex. No name, no household.",
             style = MaterialTheme.typography.bodySmall, color = Brand.InkMuted,
         )
-        if (villages.isNotEmpty()) {
+        Spacer(Modifier.height(12.dp))
+        SectionLabel("Village")
+        Spacer(Modifier.height(6.dp))
+        if (state.villages.isNotEmpty()) {
+            ChipRow { state.villages.forEach { v -> ChoiceChip(v, selected = v == state.village, onClick = { onVillage(v) }, accent = Brand.Rose) } }
+        } else {
+            org.polycare.app.ui.components.LabelledField("Village", state.village, onChange = onVillage)
+        }
+        if (!postpartum) {
             Spacer(Modifier.height(12.dp))
-            ChipRow { villages.forEach { v -> ChoiceChip(v, selected = v == village, onClick = { onVillage(v) }, accent = Brand.Rose) } }
+            SectionLabel("Sex")
+            Spacer(Modifier.height(6.dp))
+            ChipRow {
+                listOf("F" to "Girl", "M" to "Boy", "U" to "Not stated").forEach { (code, label) ->
+                    ChoiceChip(label, selected = sex == code, onClick = { onSex(code) }, accent = Brand.Rose)
+                }
+            }
         } else {
             Spacer(Modifier.height(12.dp))
-            org.polycare.app.ui.components.LabelledField("Village", village, onChange = onVillage)
+            SectionLabel("Mother's age")
+            Spacer(Modifier.height(6.dp))
+            ChipRow {
+                listOf("15-19", "20-29", "30-39", "40-49").forEach { band ->
+                    ChoiceChip(band, selected = ageBand == band, onClick = { onAgeBand(band) }, accent = Brand.Rose)
+                }
+            }
         }
         Spacer(Modifier.height(12.dp))
-        if (reported) {
+        if (state.reported) {
             Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics { liveRegion = LiveRegionMode.Polite }, verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Brand.Positive)
                 Spacer(Modifier.width(10.dp))
-                Text("Logged for the Outbreak Radar", style = MaterialTheme.typography.titleSmall, color = Brand.Positive)
+                Text(
+                    if (state.shareable) "Logged for the Outbreak Radar" else "Logged on this phone only: install the search model to share it",
+                    style = MaterialTheme.typography.titleSmall, color = Brand.Positive,
+                )
             }
         } else {
-            SecondaryButton("Log this case for the radar", onReport, enabled = village.isNotBlank(), icon = Icons.Outlined.Radar, accent = Brand.Rose)
+            SecondaryButton("Log this case for the radar", onReport, enabled = state.village.isNotBlank(), icon = Icons.Outlined.Radar, accent = Brand.Rose)
         }
     }
 }

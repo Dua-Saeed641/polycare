@@ -2,7 +2,7 @@ package org.polycare.common.sync
 
 import org.polycare.common.Hlc
 
-/** What kind of record an [Op] changes. Only [SIGNAL] and [GAP] may ever leave the phone. */
+/** What kind of record an [Op] changes. Only [SIGNAL], [GAP], [TIP] and [VOTE] may ever leave the phone. */
 enum class OpEntity(val wire: String) {
     HOUSEHOLD("household"),
     MEMBER("member"),
@@ -10,6 +10,10 @@ enum class OpEntity(val wire: String) {
     DUE_ITEM("due_item"),
     GAP("gap"),
     SIGNAL("signal"),
+    /** A tip an ASHA chose to share with the team (text + embedding). Team-visible, never personal. */
+    TIP("tip"),
+    /** "This shared tip was useful", sent instead of a near-duplicate tip. */
+    VOTE("vote"),
     ;
 
     companion object {
