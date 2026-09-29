@@ -2,8 +2,8 @@ package org.polycare.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +20,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.CallMerge
+import androidx.compose.material.icons.outlined.CloudSync
+import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material.icons.outlined.Medication
+import androidx.compose.material.icons.outlined.Radar
 import androidx.compose.material.icons.outlined.DocumentScanner
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Home
@@ -27,7 +32,6 @@ import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MonitorHeart
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -53,7 +57,12 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.material3.HorizontalDivider
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -71,6 +80,11 @@ import org.polycare.app.knowledge.SearchScreen
 import org.polycare.app.households.HouseholdsScreen
 import org.polycare.app.ocr.ScanScreen
 import org.polycare.app.triage.TriageScreen
+import org.polycare.app.sync.SyncScreen
+import org.polycare.app.radar.RadarScreen
+import org.polycare.app.conflicts.ConflictInboxScreen
+import org.polycare.app.medicine.MedicineScreen
+import org.polycare.app.team.TeamTipsScreen
 import org.polycare.app.ui.components.BrandBackground
 import org.polycare.app.ui.components.Wordmark
 import org.polycare.app.ui.theme.Brand
@@ -90,25 +104,30 @@ private const val SCAN_ROUTE = "scan"
 private const val SYSTEM_ROUTE = "system"
 private const val HOUSEHOLDS_ROUTE = "households"
 private const val DUE_LIST_ROUTE = "due-list"
+private const val SYNC_ROUTE = "sync"
+private const val RADAR_ROUTE = "radar"
+private const val CONFLICTS_ROUTE = "conflicts"
+private const val MEDICINE_ROUTE = "medicine"
+private const val TIPS_ROUTE = "tips"
 
-private data class DrawerItem(val route: String, val label: String, val icon: ImageVector, val accent: Color, val milestone: String? = null)
+private data class DrawerItem(val route: String, val label: String, val icon: ImageVector, val accent: Color)
 
-/** Every real screen, plus a few not-yet-built ones shown disabled with their milestone — the
- * same "arrives in M3" honesty Home's tiles already use, not hidden and not faked. */
+/** Every screen. Nothing is listed that is not built, and nothing built is hidden. */
 private val DrawerDestinations = listOf(
     DrawerItem(Tab.Home.route, "Home", Tab.Home.icon, Tab.Home.accent),
     DrawerItem(Tab.Ask.route, "Ask", Tab.Ask.icon, Tab.Ask.accent),
     DrawerItem(Tab.Triage.route, "Triage", Tab.Triage.icon, Tab.Triage.accent),
     DrawerItem(Tab.Search.route, "Search", Tab.Search.icon, Tab.Search.accent),
-    DrawerItem(MEMORY_ROUTE, "Memory Inspector", Icons.Outlined.Psychology, Brand.PlumDeep),
-    DrawerItem(SCAN_ROUTE, "Scan", Icons.Outlined.DocumentScanner, Brand.Positive),
+    DrawerItem(MEDICINE_ROUTE, "Medicines & counselling", Icons.Outlined.Medication, Brand.Positive),
+    DrawerItem(TIPS_ROUTE, "Team tips", Icons.Outlined.Lightbulb, Brand.Positive),
     DrawerItem(HOUSEHOLDS_ROUTE, "Households", Icons.Outlined.Groups, Brand.Pink),
     DrawerItem(DUE_LIST_ROUTE, "Due list", Icons.Outlined.CalendarMonth, Brand.Red),
+    DrawerItem(SCAN_ROUTE, "Scan", Icons.Outlined.DocumentScanner, Brand.Positive),
+    DrawerItem(RADAR_ROUTE, "Outbreak Radar", Icons.Outlined.Radar, Brand.Rose),
+    DrawerItem(CONFLICTS_ROUTE, "Conflict inbox", Icons.Outlined.CallMerge, Brand.Magenta),
+    DrawerItem(SYNC_ROUTE, "Sync", Icons.Outlined.CloudSync, Brand.Plum),
+    DrawerItem(MEMORY_ROUTE, "Memory Inspector", Icons.Outlined.Psychology, Brand.PlumDeep),
     DrawerItem(SYSTEM_ROUTE, "System", Icons.Outlined.Tune, Brand.InkMuted),
-)
-
-private val DrawerComingLater = listOf(
-    DrawerItem("sync", "Sync", Icons.Outlined.Sync, Brand.InkMuted, milestone = "M6"),
 )
 
 @Composable
@@ -125,15 +144,8 @@ fun PolyCareRoot(
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val backStack by nav.currentBackStackEntryAsState()
-    val currentRoute = backStack?.destination?.hierarchy?.firstOrNull()?.route
+    val currentRoute = backStack?.destination?.hierarchy?.firstOrNull()?.route?.substringBefore('?')
     val drawerState = rememberDrawerState(if (debugOpenDrawer) DrawerValue.Open else DrawerValue.Closed)
-
-    fun notReady(feature: String, milestone: String) {
-        scope.launch {
-            snackbar.currentSnackbarData?.dismiss()
-            snackbar.showSnackbar("$feature arrives in milestone $milestone")
-        }
-    }
 
     fun go(route: String) {
         scope.launch { drawerState.close() }
@@ -147,7 +159,7 @@ fun PolyCareRoot(
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            NavDrawer(currentRoute = currentRoute, onSelect = ::go, onNotReady = ::notReady)
+            NavDrawer(currentRoute = currentRoute, onSelect = ::go)
         },
     ) {
         BrandBackground {
@@ -166,7 +178,7 @@ fun PolyCareRoot(
                 // into transparency by design, but its opaque lower two-thirds still needs real
                 // scroll clearance, or the last row of a long list (e.g. Home's tool grid) ends
                 // up sitting behind it instead of above it.
-                val content = PaddingValues(bottom = padding.calculateBottomPadding() + 40.dp)
+                val content = PaddingValues(bottom = padding.calculateBottomPadding() + 16.dp)
                 val start = when {
                     autoBenchPoints != null -> SYSTEM_ROUTE
                     debugSearch != null -> SEARCH_ROUTE
@@ -182,7 +194,6 @@ fun PolyCareRoot(
                             contentPadding = content,
                             onAsk = { voice -> go(if (voice) "$ASK_ROUTE?voice=true" else ASK_ROUTE) },
                             onNavigate = ::go,
-                            onNotReady = ::notReady,
                             onMenu = { scope.launch { drawerState.open() } },
                         )
                     }
@@ -191,13 +202,16 @@ fun PolyCareRoot(
                     }
                     composable(SEARCH_ROUTE) { SearchScreen(contentPadding = content, onBack = { nav.popBackStack() }, initialQuery = debugSearch) }
                     composable(
-                        "$ASK_ROUTE?voice={voice}",
-                        arguments = listOf(navArgument("voice") { type = NavType.BoolType; defaultValue = false }),
+                        "$ASK_ROUTE?voice={voice}&q={q}",
+                        arguments = listOf(
+                            navArgument("voice") { type = NavType.BoolType; defaultValue = false },
+                            navArgument("q") { type = NavType.StringType; nullable = true; defaultValue = null },
+                        ),
                     ) { entry ->
                         AskScreen(
                             contentPadding = content,
                             onBack = { nav.popBackStack() },
-                            initialQuery = debugAsk,
+                            initialQuery = entry.arguments?.getString("q") ?: debugAsk,
                             autoStartVoice = entry.arguments?.getBoolean("voice") ?: false,
                         )
                     }
@@ -206,99 +220,100 @@ fun PolyCareRoot(
                     composable(SCAN_ROUTE) { ScanScreen(contentPadding = content, onBack = { nav.popBackStack() }, debugImagePath = debugOcrImagePath) }
                     composable(HOUSEHOLDS_ROUTE) { HouseholdsScreen(contentPadding = content, onBack = { nav.popBackStack() }) }
                     composable(DUE_LIST_ROUTE) { org.polycare.app.duelist.DueListScreen(contentPadding = content, onBack = { nav.popBackStack() }) }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NavDrawer(currentRoute: String?, onSelect: (String) -> Unit, onNotReady: (String, String) -> Unit) {
-    ModalDrawerSheet(drawerContainerColor = Brand.Paper) {
-        Column(Modifier.statusBarsPadding().padding(horizontal = 20.dp, vertical = 24.dp)) {
-            Wordmark(logoSize = 24.dp)
-            Spacer(Modifier.height(28.dp))
-            DrawerDestinations.forEach { item ->
-                NavigationDrawerItem(
-                    label = { Text(item.label, style = MaterialTheme.typography.titleMedium) },
-                    icon = { Icon(item.icon, contentDescription = null, tint = item.accent) },
-                    selected = currentRoute == item.route,
-                    onClick = { onSelect(item.route) },
-                    shape = MaterialTheme.shapes.large,
-                    colors = NavigationDrawerItemDefaults.colors(
-                        selectedContainerColor = item.accent.copy(alpha = 0.14f),
-                        selectedTextColor = Brand.Ink,
-                        selectedIconColor = item.accent,
-                        unselectedTextColor = Brand.Ink,
-                        unselectedIconColor = Brand.InkMuted,
-                    ),
-                    modifier = Modifier.padding(vertical = 3.dp),
-                )
-            }
-            Spacer(Modifier.height(20.dp))
-            Text("COMING LATER", style = MaterialTheme.typography.labelMedium, color = Brand.InkMuted, modifier = Modifier.padding(start = 12.dp))
-            Spacer(Modifier.height(6.dp))
-            DrawerComingLater.forEach { item ->
-                NavigationDrawerItem(
-                    label = { Text(item.label, style = MaterialTheme.typography.titleMedium, color = Brand.InkMuted) },
-                    icon = { Icon(item.icon, contentDescription = null, tint = Brand.InkMuted) },
-                    badge = { Text(item.milestone.orEmpty(), style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted) },
-                    selected = false,
-                    onClick = { onNotReady(item.label, item.milestone.orEmpty()) },
-                    shape = MaterialTheme.shapes.large,
-                    colors = NavigationDrawerItemDefaults.colors(unselectedTextColor = Brand.InkMuted, unselectedIconColor = Brand.InkMuted),
-                    modifier = Modifier.padding(vertical = 3.dp),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun FloatingTabBar(currentRoute: String?, onSelect: (Tab) -> Unit) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    0f to Brand.Paper.copy(alpha = 0f),
-                    0.45f to Brand.Paper.copy(alpha = 0.85f),
-                    1f to Brand.Paper,
-                ),
-            )
-            .navigationBarsPadding()
-            .padding(top = 28.dp, bottom = 12.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Row(
-            Modifier
-                .shadow(elevation = 18.dp, shape = CircleShape, ambientColor = Brand.Plum, spotColor = Brand.Plum)
-                .clip(CircleShape)
-                .background(Brand.White)
-                .border(1.dp, Brand.Line, CircleShape)
-                .padding(6.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Tab.entries.forEach { tab ->
-                val selected = currentRoute == tab.route
-                Row(
-                    Modifier
-                        .clip(CircleShape)
-                        .background(if (selected) tab.accent else Color.Transparent)
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                            onSelect(tab)
-                        }
-                        .padding(horizontal = 18.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    val tint = if (selected) Brand.Paper else Brand.InkMuted
-                    Icon(tab.icon, contentDescription = tab.label, tint = tint, modifier = Modifier.size(20.dp))
-                    if (selected) {
-                        Box(Modifier.width(8.dp))
-                        Text(tab.label.uppercase(), style = MaterialTheme.typography.labelMedium, color = tint)
+                    composable(TIPS_ROUTE) { TeamTipsScreen(contentPadding = content, onBack = { nav.popBackStack() }) }
+                    composable(SYNC_ROUTE) { SyncScreen(contentPadding = content, onBack = { nav.popBackStack() }) }
+                    composable(RADAR_ROUTE) { RadarScreen(contentPadding = content, onBack = { nav.popBackStack() }) }
+                    composable(CONFLICTS_ROUTE) { ConflictInboxScreen(contentPadding = content, onBack = { nav.popBackStack() }) }
+                    composable(MEDICINE_ROUTE) {
+                        MedicineScreen(
+                            contentPadding = content,
+                            onBack = { nav.popBackStack() },
+                            onAsk = { q -> go("$ASK_ROUTE?q=${android.net.Uri.encode(q)}") },
+                        )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun NavDrawer(currentRoute: String?, onSelect: (String) -> Unit) {
+    ModalDrawerSheet(drawerContainerColor = Brand.Paper) {
+        Column(
+            Modifier
+                .statusBarsPadding()
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 24.dp),
+        ) {
+            Wordmark(logoSize = 24.dp)
+            Spacer(Modifier.height(24.dp))
+            DrawerDestinations.forEach { item ->
+                NavigationDrawerItem(
+                    label = { Text(item.label, style = MaterialTheme.typography.titleMedium) },
+                    icon = { Icon(item.icon, contentDescription = null, tint = if (currentRoute == item.route) Brand.Ink else Brand.InkMuted) },
+                    selected = currentRoute == item.route,
+                    onClick = { onSelect(item.route) },
+                    shape = MaterialTheme.shapes.large,
+                    colors = NavigationDrawerItemDefaults.colors(
+                        selectedContainerColor = item.accent.copy(alpha = 0.16f),
+                        selectedTextColor = Brand.Ink,
+                        selectedIconColor = Brand.Ink,
+                        unselectedTextColor = Brand.Ink,
+                        unselectedIconColor = Brand.InkMuted,
+                    ),
+                    modifier = Modifier.padding(vertical = 2.dp).heightIn(min = 52.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Bottom navigation: four equal-width destinations, every one always labelled (an icon alone
+ * says nothing to a first-time user or a screen reader), at least 64dp tall, announced as tabs
+ * with a selected state. Solid rather than floating, so nothing scrolls behind it.
+ */
+@Composable
+private fun FloatingTabBar(currentRoute: String?, onSelect: (Tab) -> Unit) {
+    Column(Modifier.fillMaxWidth().background(Brand.White)) {
+        HorizontalDivider(color = Brand.Line)
+        Row(
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            Tab.entries.forEach { tab ->
+                TabItem(tab, currentRoute == tab.route) { onSelect(tab) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RowScope.TabItem(tab: Tab, selected: Boolean, onClick: () -> Unit) {
+    Column(
+        Modifier
+            .weight(1f)
+            .heightIn(min = 64.dp)
+            .clip(MaterialTheme.shapes.large)
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(
+            Modifier
+                .clip(CircleShape)
+                .background(if (selected) tab.accent.copy(alpha = 0.16f) else Color.Transparent)
+                .padding(horizontal = 22.dp, vertical = 4.dp),
+        ) {
+            Icon(tab.icon, contentDescription = null, tint = if (selected) Brand.Ink else Brand.InkMuted, modifier = Modifier.size(24.dp))
+        }
+        Spacer(Modifier.height(2.dp))
+        Text(
+            tab.label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            color = if (selected) Brand.Ink else Brand.InkMuted,
+        )
     }
 }

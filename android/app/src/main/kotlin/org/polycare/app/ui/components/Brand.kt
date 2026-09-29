@@ -133,23 +133,38 @@ fun Hairline(modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth().height(1.dp).background(Brand.LineSoft))
 }
 
-/** Plain white-filled text field with a hairline border — the form-field look Households/Scan
- * both use, so a form doesn't need to hand-roll `TextFieldDefaults.colors(...)` every time. */
+/**
+ * White-filled text field with a hairline border. The label is a real floating label, not a
+ * placeholder: a placeholder disappears the moment the ASHA starts typing, leaving an unlabelled
+ * field (and nothing for a screen reader to announce).
+ */
 @Composable
-fun LabelledField(label: String, value: String, modifier: Modifier = Modifier, keyboardType: KeyboardType = KeyboardType.Text, onChange: (String) -> Unit) {
+fun LabelledField(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    imeAction: androidx.compose.ui.text.input.ImeAction = androidx.compose.ui.text.input.ImeAction.Next,
+    supporting: String? = null,
+    singleLine: Boolean = true,
+    onChange: (String) -> Unit,
+) {
     TextField(
         value = value,
         onValueChange = onChange,
         modifier = modifier.fillMaxWidth().border(1.dp, Brand.Line, MaterialTheme.shapes.medium),
-        placeholder = { Text(label, color = Brand.InkMuted) },
-        singleLine = true,
+        label = { Text(label) },
+        supportingText = supporting?.let { { Text(it) } },
+        singleLine = singleLine,
         shape = MaterialTheme.shapes.medium,
-        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
         colors = TextFieldDefaults.colors(
             focusedContainerColor = Brand.White,
             unfocusedContainerColor = Brand.White,
             focusedIndicatorColor = Color.Transparent,
             unfocusedIndicatorColor = Color.Transparent,
+            focusedLabelColor = Brand.Plum,
+            unfocusedLabelColor = Brand.InkMuted,
         ),
     )
 }

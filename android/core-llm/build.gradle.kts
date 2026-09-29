@@ -12,6 +12,11 @@ plugins {
 val llamaCppDir = rootProject.file("../native/llama.cpp")
 val whisperCppDir = rootProject.file("../native/whisper.cpp")
 
+// Opt-in GPU backend: `./gradlew :app:installDebug -PpolycareVulkan=true` builds ggml with Vulkan.
+// Off by default; the CPU build is what has been measured. Enabling it also needs the toggle
+// System -> Experimental -> "Use the GPU" on the phone, and falls back to CPU if loading fails.
+val vulkan = providers.gradleProperty("polycareVulkan").orNull == "true"
+
 android {
     namespace = "org.polycare.llm"
     compileSdk = 35
@@ -26,6 +31,7 @@ android {
                 arguments += "-DLLAMA_CPP_DIR=${llamaCppDir.absolutePath}"
                 if (whisperCppDir.exists()) arguments += "-DWHISPER_CPP_DIR=${whisperCppDir.absolutePath}"
                 arguments += "-DANDROID_STL=c++_shared"
+                if (vulkan) arguments += "-DPOLYCARE_VULKAN=ON"
             }
         }
     }

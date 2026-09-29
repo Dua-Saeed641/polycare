@@ -24,6 +24,7 @@ TOKEN_LIFETIME = timedelta(minutes=15)
 UUID7_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$")
 PRIVATE_FIELDS = {"household", "household_id", "member", "member_id", "patient", "name", "phone", "address", "aadhaar"}
 SIGNAL_FIELDS = {"dense_f16", "model_id", "simhash", "village_code", "week", "age_band", "sex"}
+TIP_FIELDS = {"text", "dense_f16", "model_id", "simhash", "village_code"}
 PHONE_RE = re.compile(r"(?<!\d)(?:\+?91[ -]?)?[6-9]\d{9}(?!\d)")
 AADHAAR_RE = re.compile(r"(?<!\d)\d{12}(?!\d)")
 EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b")
@@ -102,12 +103,45 @@ def _scan_private(value: Any) -> bool:
     return isinstance(value, str) and bool(PHONE_RE.search(value) or AADHAAR_RE.search(value) or EMAIL_RE.search(value))
 
 
+def _check_embedding(p: dict[str, Any]) -> None:
+    """The 384-value float16 embedding, its model id and its 16-bit SimHash region."""
+    import math
+    import struct
+
+    raw = _decode_b64(p["dense_f16"], 768)
+    if not all(math.isfinite(value) for value in struct.unpack("<384e", raw)):
+        raise HTTPException(422, "Vector must be 384 finite float16 values")
+    if not isinstance(p["model_id"], str) or not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", p["model_id"]):
+        raise HTTPException(422, "Invalid model id")
+    if type(p["simhash"]) is not int or not 0 <= p["simhash"] <= 65535:
+        raise HTTPException(422, "Invalid simhash")
+
+
 def _validate_cloud_op(op: Op) -> None:
     kind = op.kind.upper()
     if kind in {"HOUSEHOLD", "HOUSEHOLDS", "VISIT", "MEMBER", "PATIENT"}:
         raise HTTPException(403, "Personal health records are local-only")
     if _scan_private(op.payload):
         raise HTTPException(403, "Operation contains a possible personal identifier")
+    if kind == "TIP":
+        # A tip an ASHA chose to share with the team: text plus its embedding, nothing else. The
+        # private-identifier scan above has already refused phone numbers, Aadhaar-like numbers and
+        # e-mail addresses; the phone warns the author not to write names.
+        p = op.payload
+        text = p.get("text")
+        if set(p) != TIP_FIELDS or not isinstance(text, str) or not 1 <= len(text.strip()) <= 500:
+            raise HTTPException(422, "Invalid tip payload")
+        _check_embedding(p)
+        if not isinstance(p["village_code"], str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", p["village_code"]):
+            raise HTTPException(422, "Invalid village code")
+        return
+    if kind == "GAP":
+        # A question an ASHA could not get answered offline. Text only, nothing else; the privacy
+        # scan above already refused phone numbers, Aadhaar-like numbers and e-mail addresses.
+        query = op.payload.get("query")
+        if set(op.payload) != {"query"} or not isinstance(query, str) or not 1 <= len(query.strip()) <= 240:
+            raise HTTPException(422, "Invalid gap payload")
+        return
     if kind == "VOTE":
         if set(op.payload) != {"cloud_point_id"} or not isinstance(op.payload["cloud_point_id"], str):
             raise HTTPException(422, "Invalid vote payload")
@@ -193,6 +227,12 @@ async def lifespan(application: FastAPI):
     _collection(client, "devices", None)
     _collection(client, "auth_challenges", None)
     _collection(client, "sync_ops", None)
+    _collection(client, "answers", None)
+    _collection(client, "guidance", None)
+    try:  # filtering sync_ops by kind stays fast as the collection grows
+        client.create_payload_index("sync_ops", "kind", models.PayloadSchemaType.KEYWORD)
+    except Exception:  # noqa: BLE001 - already exists, or a backend without payload indexes
+        pass
     _collection(client, "signals", 384)
     _collection(client, "knowledge", 384)
     application.state.qdrant = client
@@ -204,6 +244,29 @@ async def lifespan(application: FastAPI):
 
 
 app = FastAPI(title="PolyCare Sync Gateway", version="0.2.0", lifespan=lifespan)
+
+
+# A small fixed-window limiter per client address. It does not replace an ingress rate limit, but
+# it stops a runaway phone (or a guessing attacker) from hammering registration and auth.
+_RATE_LIMIT = int(os.environ.get("POLYCARE_RATE_LIMIT_PER_MIN", "240"))
+_hits: dict[str, tuple[int, int]] = {}
+
+
+@app.middleware("http")
+async def rate_limit(request, call_next):  # type: ignore[no-untyped-def]
+    from fastapi.responses import JSONResponse
+
+    if _RATE_LIMIT > 0:
+        minute = int(datetime.now(UTC).timestamp() // 60)
+        who = request.client.host if request.client else "unknown"
+        window, count = _hits.get(who, (minute, 0))
+        count = count + 1 if window == minute else 1
+        _hits[who] = (minute, count)
+        if len(_hits) > 10_000:
+            _hits.clear()
+        if count > _RATE_LIMIT:
+            return JSONResponse({"detail": "Too many requests"}, status_code=429, headers={"Retry-After": "30"})
+    return await call_next(request)
 
 
 def _qdrant() -> QdrantClient:
@@ -408,3 +471,12 @@ def search_knowledge(query: str = Query(min_length=2, max_length=2000),
     return {"results": [{"document_id": hit.payload["document_id"], "language": hit.payload["language"],
         "text": hit.payload["text"], "source_version": hit.payload["source_version"], "score": hit.score}
         for hit in hits], "embedding_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"}
+
+
+# Team features (gap answers, outbreak alerts, supervisor dashboard) live in their own module and
+# are mounted here, so the sync foundation above is unchanged. Imported last: it needs the helpers.
+from .artifacts import build_artifact_router  # noqa: E402
+from .team import build_router  # noqa: E402
+
+app.include_router(build_router(_authenticate, _qdrant, _pid))
+app.include_router(build_artifact_router(_authenticate))

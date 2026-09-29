@@ -13,7 +13,7 @@ message Op {
   string op_id = 1;       // UUIDv7 idempotency key
   string device_id = 2;
   Hlc hlc = 3;
-  string kind = 4;
+  string kind = 4;        // SIGNAL | VOTE | GAP (a question for supervisors) | TIP (a shared tip)
   bytes payload_json = 5; // canonical UTF-8 JSON for the operation body
   bytes prev_hash = 6;    // SHA-256 hash-chain link; 32 zero bytes for the first op
   bytes signature = 7;    // Ed25519 signature over canonical fields 1..6

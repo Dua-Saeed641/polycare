@@ -3,6 +3,11 @@ package org.polycare.app.ask
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,6 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -24,9 +30,10 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -36,23 +43,49 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.polycare.app.ai.VoiceRecorder
-import org.polycare.app.knowledge.KnowledgeHit
+import org.polycare.app.team.TeamAnswer
+import org.polycare.app.team.TeamTip
+import org.polycare.app.team.TipStatus
+import org.polycare.app.ui.components.AppIconButton
+import org.polycare.app.ui.components.ChipRow
+import org.polycare.app.ui.components.ChoiceChip
 import org.polycare.app.ui.components.GlassCard
 import org.polycare.app.ui.components.MetricRow
+import org.polycare.app.ui.components.ScreenHeader
 import org.polycare.app.ui.components.SectionLabel
 import org.polycare.app.ui.theme.Brand
+import org.polycare.common.PolyCareConfig
 import org.polycare.llm.LlmArtifacts
+
+private val Suggestions = listOf(
+    "Baby has fast breathing",
+    "How to prepare ORS",
+    "Heavy bleeding after delivery",
+    "When is vitamin A given",
+    "Newborn not feeding well",
+)
 
 @Composable
 fun AskScreen(
@@ -69,7 +102,14 @@ fun AskScreen(
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) viewModel.startRecording()
     }
-    LaunchedEffect(Unit) {
+    fun toggleMic() {
+        when (voice) {
+            VoiceUi.Recording -> viewModel.stopRecording()
+            VoiceUi.Transcribing -> Unit
+            else -> if (VoiceRecorder.hasPermission(context)) viewModel.startRecording() else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+    LaunchedEffect(initialQuery, autoStartVoice) {
         if (initialQuery != null) viewModel.ask(initialQuery)
         // Home's mic button navigates here with this set, so tapping it starts listening
         // immediately instead of landing on a blank Ask screen the user has to tap again.
@@ -85,38 +125,30 @@ fun AskScreen(
             .padding(contentPadding)
             .padding(horizontal = 20.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(40.dp).background(Brand.Plum.copy(alpha = 0.10f), CircleShape).clickable(onClick = onBack),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Brand.Plum, modifier = Modifier.size(20.dp))
-            }
-            Spacer(Modifier.width(12.dp))
-            SectionLabel("Ask", color = Brand.Plum)
-        }
+        ScreenHeader("Ask", Brand.Plum, onBack = onBack)
 
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(12.dp))
         Text("Ask about a symptom or medicine", style = MaterialTheme.typography.displaySmall, color = Brand.Ink)
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
             when (voice) {
-                VoiceUi.Recording -> "Listening — tap the mic again to stop."
-                VoiceUi.Transcribing -> "Transcribing on-device…"
+                VoiceUi.Recording -> "Listening… tap the stop button when you're done."
+                VoiceUi.Transcribing -> "Turning your voice into text on this phone…"
                 is VoiceUi.Failed -> (voice as VoiceUi.Failed).reason
-                VoiceUi.Idle -> "Type your question, or tap the mic to speak it."
+                VoiceUi.Idle -> "Type or speak in Hindi or English. Works without signal."
             },
-            style = MaterialTheme.typography.labelSmall,
-            color = if (voice is VoiceUi.Failed) Brand.Rose else Brand.InkMuted,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (voice is VoiceUi.Failed) Brand.Red else Brand.InkMuted,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         )
 
-        Spacer(Modifier.height(20.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Spacer(Modifier.height(16.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TextField(
                 value = question,
                 onValueChange = viewModel::onQuestionChange,
                 modifier = Modifier.weight(1f).border(1.dp, Brand.Line, MaterialTheme.shapes.large),
-                placeholder = { Text("e.g. baby has fast breathing") },
+                label = { Text("Your question") },
                 singleLine = true,
                 shape = MaterialTheme.shapes.large,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -126,137 +158,248 @@ fun AskScreen(
                     unfocusedContainerColor = Brand.White,
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
+                    focusedLabelColor = Brand.Plum,
+                    unfocusedLabelColor = Brand.InkMuted,
                 ),
             )
-            Spacer(Modifier.width(10.dp))
-            Box(
-                Modifier.size(52.dp).background(if (voice == VoiceUi.Recording) Brand.Rose else Brand.Glass, CircleShape)
-                    .clickable {
-                        when (voice) {
-                            VoiceUi.Recording -> viewModel.stopRecording()
-                            VoiceUi.Transcribing -> Unit
-                            else -> if (VoiceRecorder.hasPermission(context)) viewModel.startRecording() else micPermission.launch(Manifest.permission.RECORD_AUDIO)
-                        }
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                if (voice == VoiceUi.Transcribing) {
-                    CircularProgressIndicator(Modifier.size(20.dp), color = Brand.Plum, strokeWidth = 2.dp)
-                } else {
-                    Icon(Icons.Outlined.Mic, contentDescription = "Speak your question", tint = if (voice == VoiceUi.Recording) Brand.Paper else Brand.Plum)
-                }
-            }
-            Spacer(Modifier.width(10.dp))
-            Box(
-                Modifier.size(52.dp).background(Brand.Plum, CircleShape).clickable { viewModel.ask() },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = "Ask", tint = Brand.Paper)
-            }
+            MicButton(voice) { toggleMic() }
+            AppIconButton(
+                Icons.AutoMirrored.Outlined.Send, "Ask", viewModel::ask,
+                tint = Brand.Paper, container = Brand.Plum, size = 56.dp, enabled = question.isNotBlank(),
+            )
+        }
+
+        if (ui == AskUi.Idle) {
+            Spacer(Modifier.height(20.dp))
+            SectionLabel("Try asking")
+            Spacer(Modifier.height(10.dp))
+            ChipRow { Suggestions.forEach { s -> ChoiceChip(s, selected = false, onClick = { viewModel.ask(s) }) } }
         }
 
         Spacer(Modifier.height(24.dp))
         when (val state = ui) {
             AskUi.Idle -> Unit
-            AskUi.Asking -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+            AskUi.Asking -> Row(
+                Modifier.fillMaxWidth().padding(24.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+            ) {
                 CircularProgressIndicator(Modifier.size(22.dp), color = Brand.Plum, strokeWidth = 2.dp)
+                Spacer(Modifier.width(12.dp))
+                Text("Searching the guidance…", style = MaterialTheme.typography.bodyMedium, color = Brand.InkMuted)
             }
             is AskUi.Unavailable -> GlassCard(Modifier.fillMaxWidth()) {
                 Text(state.reason, style = MaterialTheme.typography.titleMedium, color = Brand.Ink)
             }
-            is AskUi.NoAnswer -> NoAnswerCard()
+            is AskUi.NoAnswer -> NoAnswerCard(state)
             is AskUi.Answered -> AnswerCard(state)
         }
         Spacer(Modifier.height(32.dp))
     }
 }
 
+/** 56dp mic button. While recording it turns red, shows a stop icon and pulses a soft ring. */
 @Composable
-private fun AnswerCard(state: AskUi.Answered) {
-    val confidencePct = (state.confidence * 100).toInt()
-    val lowConfidence = state.confidence < org.polycare.common.PolyCareConfig.Routing.minSkillScore
-    val confidenceColor = if (lowConfidence) Brand.Rose else Brand.Positive
-
-    GlassCard(Modifier.fillMaxWidth(), padding = 20.dp) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            SectionLabel(if (state.hit.lang == "hi") "हिंदी" else "English")
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(8.dp).background(confidenceColor, CircleShape))
-                Spacer(Modifier.width(6.dp))
-                Text("$confidencePct% match", style = MaterialTheme.typography.labelSmall, color = confidenceColor)
+private fun MicButton(voice: VoiceUi, onClick: () -> Unit) {
+    val recording = voice == VoiceUi.Recording
+    val pulse = rememberInfiniteTransition(label = "mic-pulse")
+    val ring by pulse.animateFloat(
+        initialValue = 1f, targetValue = 1.45f,
+        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "ring",
+    )
+    Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
+        if (recording) Box(Modifier.size(56.dp).scale(ring).alpha(0.25f).background(Brand.Rose, CircleShape))
+        Box(
+            Modifier
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(if (recording) Brand.Rose else Brand.PinkMist)
+                .border(1.dp, if (recording) Brand.Rose else Brand.Line, CircleShape)
+                .clickable(enabled = voice != VoiceUi.Transcribing, role = Role.Button, onClick = onClick)
+                .semantics {
+                    contentDescription = if (recording) "Stop recording" else "Speak your question"
+                    stateDescription = when (voice) {
+                        VoiceUi.Recording -> "Recording"
+                        VoiceUi.Transcribing -> "Transcribing"
+                        else -> "Ready"
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            when {
+                voice == VoiceUi.Transcribing -> CircularProgressIndicator(Modifier.size(22.dp), color = Brand.Plum, strokeWidth = 2.dp)
+                recording -> Icon(Icons.Outlined.Stop, contentDescription = null, tint = Brand.Paper)
+                else -> Icon(Icons.Outlined.Mic, contentDescription = null, tint = Brand.Plum)
             }
-        }
-
-        if (state.generated != null) {
-            Spacer(Modifier.height(10.dp))
-            Text(state.generated, style = MaterialTheme.typography.bodyMedium, color = Brand.Ink, fontWeight = FontWeight.Medium)
-            if (state.generating) {
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(12.dp), color = Brand.Plum, strokeWidth = 1.5.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Generating on-device…", style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted)
-                }
-            } else if (state.tokensPerSecond != null) {
-                Spacer(Modifier.height(4.dp))
-                val model = if (state.skill != null) "${LlmArtifacts.shortName} + ${state.skill}" else "${LlmArtifacts.shortName} on-device"
-                Text(
-                    "$model · %.1f tok/s".format(state.tokensPerSecond),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Brand.InkMuted,
-                )
-            }
-            Spacer(Modifier.height(10.dp))
-            Text("Source passage", style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted)
-            Spacer(Modifier.height(4.dp))
-            Text(state.hit.text, style = MaterialTheme.typography.bodySmall, color = Brand.InkMuted)
-        } else if (state.generating) {
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(Modifier.size(14.dp), color = Brand.Plum, strokeWidth = 2.dp)
-                Spacer(Modifier.width(8.dp))
-                Text("Thinking…", style = MaterialTheme.typography.bodyMedium, color = Brand.InkMuted)
-            }
-        } else {
-            Spacer(Modifier.height(10.dp))
-            Text(state.hit.text, style = MaterialTheme.typography.bodyMedium, color = Brand.Ink, fontWeight = FontWeight.Medium)
-        }
-
-        Spacer(Modifier.height(10.dp))
-        MetricRow("Source", "${state.hit.title} · p${state.hit.page}")
-
-        if (lowConfidence) {
-            Spacer(Modifier.height(10.dp))
-            Text(
-                "Low confidence — this may not be the right passage. When in doubt, refer or ask a supervisor.",
-                style = MaterialTheme.typography.bodySmall,
-                color = Brand.Rose,
-            )
-        }
-        if (state.gapLogged) {
-            Spacer(Modifier.height(6.dp))
-            Text("Saved as a gap for the next sync.", style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted)
-        }
-        if (state.generated == null && !state.generating) {
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "Shown as the closest matching passage — install the on-device model for a generated explanation.",
-                style = MaterialTheme.typography.labelSmall,
-                color = Brand.InkMuted,
-            )
         }
     }
 }
 
 @Composable
-private fun NoAnswerCard() {
-    GlassCard(Modifier.fillMaxWidth(), padding = 20.dp) {
-        Text("No matching passage found.", style = MaterialTheme.typography.titleMedium, color = Brand.Ink)
+private fun AnswerCard(state: AskUi.Answered) {
+    val confidencePct = (state.confidence * 100).toInt()
+    val lowConfidence = state.confidence < PolyCareConfig.Routing.minSkillScore
+    val confidenceColor = if (lowConfidence) Brand.Red else Brand.Positive
+    var showSource by remember { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        state.teamAnswer?.let { TeamAnswerCard(it) }
+        if (state.teamTips.isNotEmpty()) TeamTipsCard(state.teamTips)
+
+        GlassCard(Modifier.fillMaxWidth(), padding = 20.dp, accent = Brand.Plum) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                SectionLabel(if (state.hit.lang == "hi") "हिंदी" else "English")
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = "$confidencePct percent match, ${if (lowConfidence) "low" else "good"} confidence" },
+                ) {
+                    Box(Modifier.size(9.dp).background(confidenceColor, CircleShape))
+                    Spacer(Modifier.width(6.dp))
+                    Text("$confidencePct% match", style = MaterialTheme.typography.labelSmall, color = confidenceColor)
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            if (state.generated != null) {
+                Text(
+                    state.generated + if (state.generating) " ▍" else "",
+                    style = MaterialTheme.typography.bodyLarge, color = Brand.Ink, fontWeight = FontWeight.Medium,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            } else {
+                // The retrieved passage is already a complete, cited answer: show it at once and
+                // let the generated plain-language version stream in above it.
+                Text(state.hit.text, style = MaterialTheme.typography.bodyLarge, color = Brand.Ink, fontWeight = FontWeight.Medium)
+                if (state.generating) {
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(14.dp), color = Brand.Plum, strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Writing a simpler explanation…", style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted)
+                    }
+                }
+            }
+
+            if (state.generated != null && !state.generating && state.tokensPerSecond != null) {
+                Spacer(Modifier.height(12.dp))
+                SpeedRow(state)
+            }
+
+            Spacer(Modifier.height(12.dp))
+            MetricRow("Source", "${state.hit.title} · p${state.hit.page}")
+
+            if (state.generated != null) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .clickable(onClickLabel = if (showSource) "Hide source passage" else "Show source passage", role = Role.Button) { showSource = !showSource },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        if (showSource) "Hide source passage" else "Show source passage",
+                        style = MaterialTheme.typography.titleSmall, color = Brand.Plum,
+                    )
+                }
+                if (showSource) Text(state.hit.text, style = MaterialTheme.typography.bodyMedium, color = Brand.InkMuted)
+            }
+
+            if (lowConfidence) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Low confidence — this may not be the right passage. When in doubt, refer or ask a supervisor.",
+                    style = MaterialTheme.typography.bodyMedium, color = Brand.Red,
+                )
+            }
+            if (state.gapLogged) {
+                Spacer(Modifier.height(6.dp))
+                Text("Saved as a question for your supervisor on the next sync.", style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted)
+            }
+            if (state.generated == null && !state.generating) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Shown as the closest matching passage — install the on-device model for a generated explanation.",
+                    style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted,
+                )
+            }
+        }
+    }
+}
+
+/** Speed at a glance: tokens/s, how much of the reply was predicted from the passage, cached prompt. */
+@Composable
+private fun SpeedRow(state: AskUi.Answered) {
+    val model = if (state.skill != null) "${LlmArtifacts.shortName} + ${state.skill}" else LlmArtifacts.shortName
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Outlined.Bolt, contentDescription = null, tint = Brand.Plum, modifier = Modifier.size(16.dp))
+        val parts = buildList {
+            add("%.1f tok/s".format(state.tokensPerSecond))
+            state.draftAcceptance?.let { add("${(it * 100).toInt()}% predicted") }
+            if (state.cachedPromptTokens > 0) add("${state.cachedPromptTokens} tokens cached")
+        }
+        Text(
+            "$model · " + parts.joinToString(" · "),
+            style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted,
+        )
+    }
+}
+
+@Composable
+private fun TeamAnswerCard(answer: TeamAnswer) {
+    GlassCard(Modifier.fillMaxWidth(), padding = 20.dp, accent = Brand.Positive) {
+        SectionLabel("Answer from your supervisor", color = Brand.Positive)
+        Spacer(Modifier.height(8.dp))
+        Text(answer.answer, style = MaterialTheme.typography.bodyLarge, color = Brand.Ink, fontWeight = FontWeight.Medium)
+        if (answer.author.isNotBlank()) {
+            Spacer(Modifier.height(6.dp))
+            Text("— ${answer.author}", style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted)
+        }
         Spacer(Modifier.height(6.dp))
         Text(
-            "Saved as a gap for the next sync. When in doubt, refer or ask a supervisor.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = Brand.InkMuted,
+            "Team guidance, not an official protocol. Check it against the passage below.",
+            style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted,
         )
+    }
+}
+
+/** Tips other ASHAs shared that are close to the question, clearly labelled as team knowledge. */
+@Composable
+private fun TeamTipsCard(tips: List<TeamTip>) {
+    GlassCard(Modifier.fillMaxWidth(), padding = 20.dp, accent = Brand.Positive) {
+        SectionLabel("Shared by the team", color = Brand.Positive)
+        tips.forEachIndexed { i, tip ->
+            Spacer(Modifier.height(if (i == 0) 8.dp else 14.dp))
+            Text(tip.text, style = MaterialTheme.typography.bodyLarge, color = Brand.Ink)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                buildString {
+                    append(if (tip.votes == 0) "No votes yet" else "${tip.votes} found this useful")
+                    if (tip.status == TipStatus.DISPUTED) append(" · may disagree with another tip")
+                },
+                style = MaterialTheme.typography.labelSmall, color = if (tip.status == TipStatus.DISPUTED) Brand.Red else Brand.InkMuted,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Advice from other health workers, not an official protocol. Check it against the source below.",
+            style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted,
+        )
+    }
+}
+
+@Composable
+private fun NoAnswerCard(state: AskUi.NoAnswer) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        state.teamAnswer?.let { TeamAnswerCard(it) }
+        if (state.teamTips.isNotEmpty()) TeamTipsCard(state.teamTips)
+        GlassCard(Modifier.fillMaxWidth(), padding = 20.dp) {
+            Text("No matching passage found.", style = MaterialTheme.typography.titleMedium, color = Brand.Ink)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                if (state.gapLogged) "Saved as a question for your supervisor on the next sync. When in doubt, refer or ask a supervisor."
+                else "When in doubt, refer or ask a supervisor.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Brand.InkMuted,
+            )
+        }
     }
 }

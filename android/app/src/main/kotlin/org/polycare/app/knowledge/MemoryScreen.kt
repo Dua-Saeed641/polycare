@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.polycare.app.ui.components.GlassCard
+import org.polycare.app.ui.components.ScreenHeader
 import org.polycare.app.ui.components.Hairline
 import org.polycare.app.ui.components.MetricRow
 import org.polycare.app.ui.components.SectionLabel
@@ -57,16 +58,7 @@ fun MemoryScreen(contentPadding: PaddingValues, onBack: () -> Unit, viewModel: M
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(40.dp).clip(CircleShape).background(Brand.PlumDeep.copy(alpha = 0.10f)).clickable(onClick = onBack),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Brand.PlumDeep, modifier = Modifier.size(20.dp))
-                }
-                Spacer(Modifier.width(12.dp))
-                SectionLabel("What this phone knows", color = Brand.PlumDeep)
-            }
+            ScreenHeader("What this phone knows", Brand.PlumDeep, onBack = onBack)
         }
 
         item { OverviewCard(state.stats, state.filter, onSource = viewModel::setSource) }
@@ -74,7 +66,7 @@ fun MemoryScreen(contentPadding: PaddingValues, onBack: () -> Unit, viewModel: M
         val stats = state.stats
         if (stats != null && stats.byLang.size > 1) {
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                org.polycare.app.ui.components.ChipRow {
                     LangChip("All", state.filter.lang == null) { viewModel.setLang(null) }
                     stats.byLang.forEach { (lang, count) ->
                         LangChip("${langLabel(lang)} · $count", state.filter.lang == lang) { viewModel.setLang(lang) }
@@ -97,15 +89,7 @@ fun MemoryScreen(contentPadding: PaddingValues, onBack: () -> Unit, viewModel: M
                     CircularProgressIndicator(Modifier.size(20.dp), color = Brand.Plum, strokeWidth = 2.dp)
                 }
             } else if (state.hasMore && state.items.isNotEmpty()) {
-                Text(
-                    "LOAD MORE",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Brand.Plum,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = viewModel::loadMore)
-                        .padding(vertical = 14.dp),
-                )
+                org.polycare.app.ui.components.SecondaryButton("Load more passages", viewModel::loadMore)
             }
         }
     }
@@ -131,7 +115,7 @@ private fun OverviewCard(stats: KnowledgeStats?, filter: MemoryFilter, onSource:
                 Text(
                     "${stats.ambiguous} row(s) print several vaccines together — flagged, not guessed at",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Brand.Rose,
+                    color = Brand.Red,
                 )
             }
         }
@@ -153,32 +137,12 @@ private fun OverviewCard(stats: KnowledgeStats?, filter: MemoryFilter, onSource:
 
 @Composable
 private fun SourceChip(text: String, selected: Boolean, onClick: () -> Unit) {
-    Text(
-        text,
-        style = MaterialTheme.typography.bodySmall,
-        color = if (selected) Brand.Paper else Brand.Plum,
-        modifier = Modifier
-            .clip(CircleShape)
-            .background(if (selected) Brand.Plum else Brand.Glass)
-            .border(1.dp, if (selected) Brand.Plum else Brand.Line, CircleShape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 7.dp),
-    )
+    org.polycare.app.ui.components.ChoiceChip(text, selected, onClick)
 }
 
 @Composable
 private fun LangChip(text: String, selected: Boolean, onClick: () -> Unit) {
-    Text(
-        text,
-        style = MaterialTheme.typography.bodySmall,
-        color = if (selected) Brand.Paper else Brand.InkMuted,
-        modifier = Modifier
-            .clip(CircleShape)
-            .background(if (selected) Brand.Plum else Brand.Glass)
-            .border(1.dp, if (selected) Brand.Plum else Brand.Line, CircleShape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 7.dp),
-    )
+    org.polycare.app.ui.components.ChoiceChip(text, selected, onClick)
 }
 
 @Composable

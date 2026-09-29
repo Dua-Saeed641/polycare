@@ -7,7 +7,12 @@ import kotlinx.coroutines.launch
 import org.polycare.app.ai.EmbedderProvider
 import org.polycare.app.ai.LlmProvider
 import org.polycare.app.households.HouseholdsRepository
+import org.polycare.app.ai.SkillsRepository
+import org.polycare.app.conflicts.ConflictsRepository
 import org.polycare.app.knowledge.KnowledgeRepository
+import org.polycare.app.radar.SignalsRepository
+import org.polycare.app.sync.SyncRepository
+import org.polycare.app.team.TeamGuidanceRepository
 import org.polycare.governor.DegradationLadder
 import org.polycare.governor.DeviceProbe
 import org.polycare.governor.Rung
@@ -26,7 +31,22 @@ class HomeStatusViewModel @Inject constructor(
     llmProvider: LlmProvider,
     deviceProbe: DeviceProbe,
     households: HouseholdsRepository,
+    signals: SignalsRepository,
+    sync: SyncRepository,
+    conflicts: ConflictsRepository,
+    skills: SkillsRepository,
+    private val guidance: TeamGuidanceRepository,
 ) : ViewModel() {
+    /** Cards supervisors sent to this phone's village; newest first. */
+    val guidanceCards = guidance.cards
+    fun dismissGuidance(id: String) = guidance.dismiss(id)
+    val llm = llmProvider.state
+    val radar = signals.items
+    val syncState = sync.state
+    val pendingOps = sync.pendingOps
+    val conflictList = conflicts.conflicts
+    val skillCount: Int = runCatching { skills.available().size }.getOrDefault(0)
+
     val knowledge = knowledgeRepository.state
     val embedder = embedderProvider.state
     /** Recent visits, newest first — Home's "Recent activity" (replaces cards for Ask/Triage/
@@ -43,7 +63,7 @@ class HomeStatusViewModel @Inject constructor(
         // device (too little RAM, thermal-critical, or non-arm64) — loading a 1.1GB model there
         // would fight the rung's own decision instead of honouring it, so only warm it up when
         // the rung says this device can actually carry it.
-        val rung = DegradationLadder.choose(deviceProbe.snapshot())
+        val rung = org.polycare.app.chaos.Chaos.rung(DegradationLadder.choose(deviceProbe.snapshot()))
         if (rung != Rung.RECALL) {
             viewModelScope.launch { llmProvider.get() }
         }

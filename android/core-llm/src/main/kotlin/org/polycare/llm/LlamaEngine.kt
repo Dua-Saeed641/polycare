@@ -18,8 +18,16 @@ data class GenerationStats(
     val promptMs: Long, 
     val decodeMs: Long,
     val gpuEnabled: Boolean = false,
-    val gpuLayers: Int = 0
+    val gpuLayers: Int = 0,
+    /** Draft tokens proposed from the prompt (speculative decoding) and how many the model accepted. */
+    val draftedTokens: Int = 0,
+    val acceptedTokens: Int = 0,
+    /** Prompt tokens whose KV entries were reused from the previous request (not re-decoded). */
+    val reusedPrefixTokens: Int = 0,
 ) {
+    /** Share of proposed draft tokens the model confirmed; 0 when nothing was drafted. */
+    val draftAcceptance: Double get() = if (draftedTokens == 0) 0.0 else acceptedTokens.toDouble() / draftedTokens
+
     /** Generation speed once the prompt is already processed — the number shown as "tok/s". */
     val tokensPerSecond: Double get() = if (decodeMs <= 0) 0.0 else generatedTokens * 1000.0 / decodeMs
     
@@ -80,6 +88,15 @@ class LlamaEngine private constructor(
     suspend fun clearSkills(): Boolean = setActiveSkills(emptyList())
 
     /**
+     * Pre-fills the KV cache with the constant part of a prompt (the system message) so the very
+     * first real question skips that prefill. Generates a single token to force the decode.
+     */
+    suspend fun warmUp(prefix: String) = withContext(Dispatcher) {
+        LlamaNative.generate(handle, prefix, 1, 0f, 1f, 0, "") { }
+        Unit
+    }
+
+    /**
      * Streams the answer token by token, ending with [GenerationEvent.Done] and its timing
      * stats. [prompt] must already be fully formatted (ChatML — see PromptFormat); this layer
      * does not know about chat turns or system messages.
@@ -89,13 +106,16 @@ class LlamaEngine private constructor(
         maxTokens: Int = PolyCareConfig.Llm.maxNewTokens,
         temperature: Float = PolyCareConfig.Llm.temperature,
         topP: Float = PolyCareConfig.Llm.topP,
+        maxDraft: Int = PolyCareConfig.Llm.speculativeDraftTokens,
+        /** Extra text to draw speculative continuations from (drafting "from memory"); never decoded. */
+        draftContext: String = "",
     ): Flow<GenerationEvent> = callbackFlow {
         val job = launch(Dispatcher) {
             val sink = TokenSink { piece ->
                 val result = trySendBlocking(GenerationEvent.Token(piece))
                 if (result.isClosed) throw CancellationException("generation collector closed")
             }
-            val stats = LlamaNative.generate(handle, prompt, maxTokens, temperature, topP, sink)
+            val stats = LlamaNative.generate(handle, prompt, maxTokens, temperature, topP, maxDraft, draftContext, sink)
             trySendBlocking(
                 GenerationEvent.Done(
                     GenerationStats(
@@ -104,7 +124,10 @@ class LlamaEngine private constructor(
                         stats[2], 
                         stats[3],
                         gpuEnabled,
-                        gpuLayers
+                        gpuLayers,
+                        stats[4].toInt(),
+                        stats[5].toInt(),
+                        stats[6].toInt(),
                     )
                 ),
             )

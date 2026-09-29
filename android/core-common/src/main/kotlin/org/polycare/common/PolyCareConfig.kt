@@ -31,10 +31,32 @@ object PolyCareConfig {
         const val nearDuplicateCosine = 0.90f
     }
 
+    object Gaps {
+        /** Longest question kept for a supervisor; longer input is cut. */
+        const val maxQueryChars = 240
+    }
+
+    object Radar {
+        /** Signals older than this no longer count toward a cluster. */
+        const val windowMs = 7L * 24 * 60 * 60 * 1000
+        /** Cosine similarity at or above which two signals belong to the same syndrome cluster. */
+        const val clusterCosine = 0.80f
+        /** A cluster needs at least this many signals... */
+        const val minSignals = 3
+        /** ...from at least this many distinct villages to raise an alert. */
+        const val minVillages = 2
+        /** Vector model for on-device signals: a multi-hot encoding of the marked danger signs. */
+        const val signalModelId = "danger-signs-v1"
+    }
+
     object Sync {
         const val stableWindowMs = 30_000L
         const val chunkBytes = 256 * 1024
         const val maxClockDriftMs = 5L * 60 * 1000
+        /** How often the background job runs when its constraints hold. */
+        const val periodicHours = 6L
+        /** Most a single background run sends on a metered (data-plan) connection. */
+        const val meteredBudgetBytes = 64L * 1024
     }
 
     object Llm {
@@ -45,9 +67,13 @@ object PolyCareConfig {
          * real generation observed this session). Lower than the previous 256 so a model that
          * fails to stop doesn't run needlessly long, without being tight enough to truncate a
          * normal answer. */
-        const val maxNewTokens = 180
-        const val temperature = 0.7f
+        const val maxNewTokens = 120
+        /** 0 = greedy. Answers only restate a retrieved passage, so determinism costs nothing
+         * and enables exact prompt-lookup speculative decoding (see jni_bridge.cpp). */
+        const val temperature = 0f
         const val topP = 0.9f
+        /** Max tokens drafted from the prompt per verification step; 0 disables speculation. */
+        const val speculativeDraftTokens = 8
         /** Per-request LoRA scale when a single skill is the clear match (no blending). */
         const val singleSkillScale = 1.0f
     }

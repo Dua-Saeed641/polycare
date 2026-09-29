@@ -13,8 +13,15 @@ endif()
 # PERFORMANCE OPTIMIZATIONS - Fixed 2026-09-29
 # ============================================================================
 
-# Disable Vulkan for now (can enable later after testing basic build)
-set(GGML_VULKAN OFF CACHE BOOL "Disable Vulkan GPU acceleration" FORCE)
+# Vulkan GPU offload is opt-in: `-PpolycareVulkan=true` (see core-llm/build.gradle.kts). The default
+# build stays CPU-only, which is the configuration that has been built and measured. The NDK ships
+# the Vulkan headers and the glslc shader compiler that ggml-vulkan needs.
+option(POLYCARE_VULKAN "Build ggml's Vulkan backend (experimental)" OFF)
+if(POLYCARE_VULKAN)
+    set(GGML_VULKAN ON CACHE BOOL "Vulkan GPU acceleration (opt-in)" FORCE)
+else()
+    set(GGML_VULKAN OFF CACHE BOOL "Vulkan GPU acceleration is off unless -PpolycareVulkan=true" FORCE)
+endif()
 
 # Disable CPU_ALL_VARIANTS to avoid BACKEND_DL requirement
 # Instead, use optimized armv8.2-a+dotprod for better performance

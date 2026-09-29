@@ -293,3 +293,270 @@ Surveyed what's actually missing before picking the next task, rather than assum
 - Integrated FastEmbed multilingual MiniLM as separate shared-knowledge ingestion and search routes. Verified the model registry dimension (384), ran actual English passage/query embeddings through FastEmbed ONNX (both finite 384d), and added Qdrant in-memory API coverage.
 - Fixed the canonical operation signature encoding discovered by the new integration test: previous-hash bytes are lowercase hex in the signed canonical JSON, base64 only on REST. Qdrant payload-only collections now hold auth/devices/sync ops without dummy vectors; signals/knowledge alone carry actual embeddings.
 - Checks: 9 gateway tests pass; `uv lock --check` passes; full Android unit `test` passes; debug APK and Android instrumentation APK assemble. OCR instrumentation has not been run on a handset because ADB/platform-tools and a connected device are absent from this environment. Qdrant Cloud live integration remains blocked on project credentials.
+
+## 2026-09-29 (late) — Faster LLM, op-log, phone sync client, Outbreak Radar, Conflict Inbox, accessible UI; merged with the OCR / sync-gateway commits. WRITTEN, NOT RUN ON A PHONE.
+
+**Read this first if you are picking this up.** All of the work below was written on request *without on-device testing*. The only verification is that it compiles: `:core-common:compileKotlin`, `:app:compileDebugKotlin`, a clean `:core-llm:buildCMakeDebug[arm64-v8a]` (native `jni_bridge.cpp`), `:app:compileDebugUnitTestKotlin`, `:core-common:compileTestKotlin`; the gateway modules pass `py_compile`. No test was added to the Android side or run, and the existing unit suites were not re-run after these changes (the gateway has new tests in `cloud/gateway/tests/test_team.py`, also not run). Treat every "works" below as "should work". The verification checklist at the end says what to check first and how.
+
+Context: the user connected a Realme RMX2151 (Android 12), asked for component testing, hit a broken build, then redirected to "write all remaining features, make the LLM answer fast, fix the UI accessibility, don't test". MILESTONES.md is no longer followed. Later the user pulled LovekeshAnand's two commits (`ocr-package`, `fastembed-fix`), which overlapped this work, and asked: **"everything overlapping follows their process, everything not overlapping stays ours."**
+
+---
+
+### A. The merge, and how each overlap was resolved
+
+`git merge` of `origin/main` (2 commits: PaddleOCR module + a Qdrant-backed sync gateway with `proto/sync.proto`) into our commit `8e300d4`. Conflicts were in 7 files; several more overlapped semantically without a textual conflict.
+
+| Area | Their side | Ours | Resolution |
+|---|---|---|---|
+| Household encryption | `HouseholdStoreCipher`, `households_store.enc` in `noBackupFilesDir`, atomic move, refuses to seed over an unreadable store, `storageWarning` | `SecureBox` sealing `files/households_store.json` | **Theirs.** `HouseholdsRepository` is their file plus our op-log calls, `setMemberField`/`setHouseholdField`/`villages()` and ISO visit dates. `SecureBox` is kept, but only for the op-log lines, `conflicts.json` and the Ed25519 seed |
+| Gateway | `cloud/gateway/app/main.py`: Qdrant only, Ed25519 device auth, signed hash-chained ops, `SIGNAL`/`VOTE` only, FastEmbed knowledge | `cloud/gateway/main.py`: SQLite, bearer token, our own JSON | **Theirs.** Our `main.py`, `radar.py`, `requirements.txt`, `static/`, `docker-compose.yml` deleted (copies kept only in the scratchpad). Our non-overlapping features were re-added *on top of* their gateway, see section 7 |
+| Wire format | `proto/sync.proto` + gateway validation | ad-hoc JSON, multi-hot radar vector, "+1" mechanism | **Theirs.** Phone client rewritten to sign and chain ops; signals re-shaped (384-value f16 e5 embedding, simhash, village code, week, age band, sex); the "+1" idea removed |
+| LLM native layer | `loadModel(..., nGpuLayers)`, `gpuEnabled`/`gpuLayers` in stats, CMake flags (`GGML_VULKAN OFF`, `GGML_CPU_ALL_VARIANTS OFF`, `GGML_BACKEND_DL OFF`, `GGML_NATIVE OFF`) | prefix cache, greedy, speculative decoding, `generate(maxDraft)` | **Both.** Took their files, re-applied ours on top; `GenerationStats` carries both sets of fields. Vulkan is still OFF so GPU layers do nothing |
+| OCR | PaddleOCR module `android/ocr-paddle`, `OcrEngine` uses it (ML Kit fallback) | accessibility edits in `ScanScreen` | Both kept; git auto-merged `ScanScreen`; compiles |
+| Knowledge search | `QueryCache` inside `KnowledgeRepository` | Medicine cards call `search(query, limit)` | Both kept; signature unchanged, compiles |
+| Docs | ~12 summary `.md`/`.txt` files, STATUS/README/WORKLOG edits | STATUS/WORKLOG sections | Kept both; STATUS and this entry reconciled. **I did not read or verify the teammate's summary documents (`COMPLETE_SUMMARY.md`, `FINAL_*`, `presentation/`); some may claim things we know are unmeasured** |
+
+Nothing was committed by me. The merge is staged for the user to review and commit. A junk file `cloud/gateway/.dev-postgres.log` came in with their commit (Postgres was removed later); consider deleting it.
+
+---
+
+### 0. Environment fixes needed to build on the dev PC (any machine with a space in the Windows user name)
+
+| Problem | Cause | Fix |
+|---|---|---|
+| `:core-llm:configureCMake` fails: `add_subdirectory given source ...\native\llama.cpp which is not an existing directory` | llama.cpp / whisper.cpp sources are gitignored | `bash native/fetch-llama-cpp.sh && bash native/fetch-whisper-cpp.sh` (pinned commits) |
+| Link errors: `undefined symbol: operator new`, `__cxa_*`, `std::__ndk1::*` in `libggml-base.so` | Windows user name is "Dua Saeed" (space). CMake shortens the NDK compiler to 8.3 form `CLANG_~1.EXE`; clang loses `clang++` driver mode and links as C, dropping libc++ | Junction `C:\androidsdk` -> `C:\Users\Dua Saeed\AppData\Local\Android\Sdk`; `android/local.properties` = `sdk.dir=C\:/androidsdk` (gitignored); delete `android/core-llm/.cxx`; rebuild. Still worked after the merge (clean native build succeeds) |
+| No LLM / speech model on the phone | not committed | downloaded and sha256-verified, pushed to `files/models/`: `qwen2.5-0.5b-instruct/qwen2.5-0.5b-instruct-q4_k_m.gguf` (491,400,032 B), `whisper/ggml-small-q5_1.bin` (190,085,487 B). Hashes are in `tools/models/fetch_models.sh`. The e5 embedder and knowledge shard were already there |
+| PaddleOCR models | teammate's assets | `tools/models/fetch_paddle_ocr_models.ps1` (see their WORKLOG entry) |
+
+Not done: LoRA adapters (`maternal-newborn`, `child-health`) do not exist on this PC (`tools/skills/out/` missing). Train with `tools/skills/train_skill.py`, push with `tools/models/push_skills.sh`. `skill_check` cannot pass until then.
+
+Baseline before my changes (verified this session): JVM unit tests 43 run / 0 failed (app 14, core-common 9, core-governor 8, core-vector 8, core-embed 4 *skipped*); on-phone `embed_check` PASS (25/25 neighbours, min cos 0.9983, query p50 16.6 ms). The APK on the phone before the rebuild was from 2026-09-28.
+
+---
+
+### 1. Faster LLM answers
+
+Files: `android/core-llm/src/main/cpp/jni_bridge.cpp`, `core-llm/.../LlamaNative.kt`, `LlamaEngine.kt`, `PromptFormat.kt`, `core-common/.../PolyCareConfig.kt`, `app/.../ai/LlmProvider.kt`, `app/.../PolyCareApp.kt`. (After the merge these sit on top of the teammate's GPU-parameter version of the same files.)
+
+**a) KV-cache prefix reuse.** `Engine` keeps `kv` (tokens resident in sequence 0) and `adapterKey`. On each `generate`, the longest common prefix of the new prompt and `kv` is kept (`llama_memory_seq_rm` from that position), only the rest is decoded; the last prompt token is always re-decoded so fresh logits exist. If a partial `seq_rm` fails the cache is cleared; every exception path clears it. `setAdapters` returns early if the adapter set and scales are unchanged, otherwise applies them **and clears the KV cache**. `LlamaEngine.warmUp(prefix)` decodes `PromptFormat.askPrefix` once at model load so the first real question skips that prefill (`LlmProvider` logs `warmMs`).
+
+**b) Greedy decoding.** `PolyCareConfig.Llm.temperature` is `0f` (was 0.7); `temperature <= 0` selects greedy (own `argmaxAt`, no sampler chain). Answers restate a retrieved passage so determinism costs nothing and is required for exact speculation. `maxNewTokens` 180 -> 120; the Ask system prompt asks for 1-3 sentences.
+
+**c) Prompt-lookup speculative decoding.** In greedy mode `lookupDraft` finds the most recent earlier occurrence of the last 3-gram (then 2-gram) in prompt+generated tokens and proposes what followed, up to `Llm.speculativeDraftTokens` (8). The token plus the draft are decoded in **one batch with logits at every position**; the accepted prefix is emitted, rejected drafts are removed from the KV cache, and the model's own token at the first disagreement continues. Output is identical to plain greedy by construction. `speculativeDraftTokens = 0` disables it (also automatic when `temperature > 0`).
+
+**d) Stats.** `LlamaNative.generate(handle, prompt, maxTokens, temperature, topP, maxDraft, sink)` returns 7 values `[promptTokens, generatedTokens, promptMs, decodeMs, drafted, accepted, reusedPrefix]`. `GenerationStats` has the teammate's `gpuEnabled`/`gpuLayers` plus our `draftedTokens`, `acceptedTokens`, `reusedPrefixTokens`, `draftAcceptance`. Ask shows tok/s, "% predicted", "N tokens cached".
+
+**e) Preload.** `PolyCareApp.onCreate` loads and warms the LLM in the background unless the governor rung is RECALL (`LlmProvider.get()` is mutex-guarded, `HomeStatusViewModel` also triggers it).
+
+**Risk spots to check first (the speed itself is unmeasured):**
+- Wrong `kv` bookkeeping would show as garbage or repeated text on the 2nd+ question. Compare the answer to the same question with `speculativeDraftTokens = 0`.
+- The batch-with-logits path (`llama_decode` on a multi-token batch with every `logits[i] = 1`, then `llama_get_logits_ith(ctx, i)`): if indexing is off, `draftAcceptance` will be ~0 and output may change.
+- Decode threads are still 2 (`defaultDecodeThreadCount`), tuned for the 1.5B model on the Xiaomi. The 0.5B model on the Realme was never tuned. Try 3-4.
+- Teammate's GPU path: `GGML_VULKAN OFF`, so `gpuLayers != 0` requests are accepted but nothing is offloaded. `LlmProvider` loads with the default `gpuLayers = 0`.
+
+---
+
+### 2. Op-log and encryption (invariants 1, 2, 8)
+
+Files: `core-common/.../sync/Op.kt`, `app/.../sync/OpLogStore.kt`, `app/.../security/SecureBox.kt`, `app/.../households/HouseholdsRepository.kt`, `app/.../knowledge/GapsRepository.kt`.
+
+- `Op(opId UUIDv7, hlc, entity, action, entityId, payload: Map<String,String>)`; `OpEntity` = household, member, visit, due_item, gap, signal.
+- `OpLogStore` (`files/oplog/`): `ops.log` (one AES-GCM-sealed JSON line per op via `SecureBox`, each append fsynced) and `cursor` (one atomically replaced file holding `"<seq> <base64 chain head>"`). The cursor and the gateway's hash-chain head are deliberately stored together: two files could be left inconsistent by a kill, and the re-signed retry would then differ from what the gateway stored (409 "operation id reused"). Idempotent by `opId`. Unreadable lines are counted and logged, never fatal.
+- `HouseholdsRepository` (their persistence, encrypted by their `HouseholdStoreCipher`): its primary constructor gained an `OpLogStore?`; the test-only 3-arg constructor passes `null`. `addHousehold`, `addMember`, `recordVisit` append the op **before** changing state. New: `setMemberField`, `setHouseholdField`, `memberFieldValue`, `householdFieldValue`, `villages()`. `visit.date` defaults to `LocalDate.now().toString()` (was the literal "Today"; old stored visits keep it).
+- `GapsRepository` is op-log backed (constructor `(OpLogStore, EventLog)`): `log` appends an upsert (deduped by text), `resolve(query)` appends a delete, the list is rebuilt from the log at startup. Question text is capped (`PolyCareConfig.Gaps.maxQueryChars = 240`).
+
+**Honest limits:** only gaps and signals are actually *rebuilt* from the log at startup; households/members/visits/due items load from their encrypted store, and the log records their mutations for sync/replay later. No log compaction, and every line is decrypted at startup. The demo households (`seedInitialDataIfEmpty`) are still created on first run and do not write ops.
+
+---
+
+### 3. Sync client for the gateway's signed protocol (invariants 7, 2, 8)
+
+Files: `core-common/.../sync/SyncGate.kt`, `SignalCodec.kt`, `WireCodec.kt`; `app/.../sync/DeviceIdentity.kt`, `GatewayClient.kt`, `SyncRepository.kt`, `SyncViewModel.kt`, `SyncScreen.kt`; `app/.../settings/AppSettings.kt`; `AndroidManifest.xml`; `libs.versions.toml` (BouncyCastle 1.78.1).
+
+The protocol is the teammate's (`proto/sync.proto`, `cloud/gateway/app/main.py`, README):
+1. `DeviceIdentity`: device id = the HLC node id (`HlcClock.node` is now public; the gateway requires each op's HLC node to equal the device id). Ed25519 key pair from BouncyCastle's lightweight API (the platform only has Ed25519 from API 33, minSdk is 29); the 32-byte seed is stored sealed with `SecureBox`.
+2. `GatewayClient.authenticate()`: `POST /v1/devices/register` (header `X-Enrollment-Token`, idempotent), `POST /v1/auth/challenge`, sign the decoded nonce, `POST /v1/auth/verify` -> bearer token (cached 12 of its 15 minutes). 401 clears the cache.
+3. `SyncRepository.push()` walks `OpLogStore.pending()` in order. `SyncGate.decide`: **Push** only for a `SIGNAL` that already carries all its wire fields and a `GAP` upsert; everything else (households, members, visits, gap deletes, signals recorded without the search model) is **KeepLocal**. Each pushed op is built in its wire shape, signed over canonical JSON and chained: `prev_hash` = previous pushed op's `sha256(signed_bytes ‖ signature)`, starting from the head the gateway last acknowledged.
+4. `WireCodec.signedBytes` reproduces the gateway's canonical JSON byte for byte: sorted keys, compact separators, Python's `ensure_ascii=False` string escaping, `prev_hash` as lowercase hex in the signed bytes (base64 on the REST wire). **This is the most likely place for a first-contact failure ("signature is invalid"); it has never been checked against the real gateway.**
+5. Chunks of at most 100 ops / 256 KB (the gateway allows 256). After each push the cursor and chain head advance **together**, and only if the gateway's returned head equals the one we computed; otherwise the run stops and the next run rebuilds from the last good head. A retried chunk is byte-identical (Ed25519 is deterministic; a signal's embedding is stored in its op), so the gateway treats it as a duplicate.
+6. `pull()`: `GET /v1/radar/alerts` (cloud alerts -> `SignalsRepository.setCloudAlerts`) and `GET /v1/answers?after_ms=` (supervisor answers -> `TeamGuidanceRepository.merge`, matching gaps resolved). Both are our additions to the gateway (section 7). The teammate's `/v1/ops/pull` (other devices' ops) is not used.
+7. Auto-sync (`startAutoSync`): `registerDefaultNetworkCallback`, waits `Sync.stableWindowMs` (30 s) after a network appears, then syncs if auto-sync is on, a gateway is set and ops are pending.
+8. Settings: gateway URL, **enrollment token** (was a bearer token in our first design), village, auto-sync. Manifest: `INTERNET`, `ACCESS_NETWORK_STATE`, `usesCleartextTraffic="true"` (LAN `http://` gateway).
+9. Sync screen: live-region status, Sync now, last-sync numbers (sent, kept local, bytes sent, bytes not sent), "stays on this phone" explanation, questions/answers, connection form with Test connection (health + register + authenticate) and this phone's ID.
+
+**Limits:** no WorkManager job, so nothing syncs while the app process is not running (the cursor logic is restart-safe, the scheduling is not); cleartext traffic is enabled globally (fine on a LAN, use https otherwise; their gateway itself requires an https Qdrant URL); their gateway is single-writer.
+
+---
+
+### 4. Outbreak Radar
+
+Files: `core-common/.../radar/OutbreakRadar.kt`, `sync/SignalCodec.kt`, `app/.../radar/SignalsRepository.kt`, `RadarScreen.kt`, `app/.../triage/TriageViewModel.kt`, `TriageScreen.kt`, `PolyCareConfig.Radar`.
+
+- A signal is: the marked danger-sign ids, category, a coarse village, the day. **Two encodings are stored in the op.** (a) A multi-hot vector over the danger-sign vocabulary, `modelId = "danger-signs-v1"`, drives this phone's own radar and needs nothing installed. (b) The gateway's shape, built at record time (so a retry is byte-identical): `dense_f16` = the e5 embedding (384 float16 little-endian, base64) of the fixed sentence `"<category label>. Danger signs: <labels>"`, `emb_model_id` = `embedder.modelId`, `simhash` = 16 sign bits against 16 Gaussian hyperplanes derived from `SignalCodec.FLEET_SEED` with `java.util.Random` (ARCHITECTURE.md 5.6), `village_code` (slug of the village), ISO `week`, `age_band`, `sex`. If the search model is not installed only (a) exists and the signal stays on the phone (the Triage card says so).
+- `OutbreakRadar.detect` groups signals in the last 7 days by model id (invariant 4), leader-clusters on cosine >= 0.80, ALERT when a cluster has >= 3 cases from >= 2 villages, WATCH at >= 6 in one village.
+- Triage: after marking a sign a "Help spot outbreaks" card shows the village chips, **sex** (or the mother's age band for postpartum) and an explicit **Log this case for the radar** button; it states exactly what is shared. Age band defaults by category (0-1, 1-4, 20-29). Nothing is reported automatically.
+- The gateway clusters everyone's embeddings and returns alerts labelled generically ("Similar symptoms, age 1-4") because their signals deliberately carry no text. Home shows a red banner for the top ALERT.
+
+**Limits:** the SimHash generator is defined only in `SignalCodec.kt` (Java's `Random`); the gateway does not currently recompute or check it, so a future server-side region index would have to port it exactly. Care-at-home cases with no signs create no signal.
+
+---
+
+### 5. Conflict Inbox
+
+Files: `core-common/.../conflict/ConflictDetector.kt`, `app/.../conflicts/ConflictsRepository.kt`, `ConflictInboxScreen.kt`. Not affected by the merge.
+
+- Export: consented households + members to a JSON file the user saves (`CreateDocument`, format id `polycare-households` v1). Import: a teammate's file via `OpenDocument`.
+- Matching: household by id, else head+village (case-insensitive); member by id, else name within the household. Unmatched incoming records are added (consented households only). `ConflictDetector.detect`: a different value from a **different author** is always a conflict, a later edit by the **same** device is not. Both values are kept in a sealed `conflicts.json`.
+- Resolve: Keep mine / Use theirs / Keep both (text fields only). Each resolution stores the previous local value; **Undo** restores it and reopens the conflict.
+- Deliberately *not* automatic sync (the user exports and imports), so invariant 7 is not violated. Phone-to-phone transfer would need a design decision about consent.
+
+---
+
+### 6. Medicines and counselling, supervisor answers (phone side)
+
+- `app/.../medicine/`: 15 `TopicCard`s; a card holds only a **query**, expanding it runs `KnowledgeRepository.search(query, limit = 3)` and shows passages with title and page (no clinical text written by us). "Ask a question about this" opens Ask with the query (route `ask?voice={voice}&q={q}`).
+- `app/.../team/TeamGuidanceRepository.kt`: supervisor answers merged by id, found by >= 60% term overlap; Ask and the no-answer card show them first, labelled team guidance. When a team answer exists no gap is logged.
+
+---
+
+### 7. Gateway: theirs, plus our non-overlapping team features
+
+Their `cloud/gateway/app/main.py` is unchanged except three small edits: a `GAP` branch in `_validate_cloud_op` (payload exactly `{"query": 1-240 chars}` after their existing private-identifier scan, so phone numbers / Aadhaar-like numbers / e-mail addresses in a question are refused with 403), an `answers` payload-only Qdrant collection created in `lifespan`, and `app.include_router(build_router(...))` at the very end.
+
+`cloud/gateway/app/team.py` (new, kept separate): `GET /v1/answers?after_ms=` (device or supervisor token), `GET /v1/radar/alerts` (device or supervisor token), `GET /v1/supervisor/gaps` (unanswered questions grouped by text, read from the already-stored signed `sync_ops`), `POST /v1/supervisor/answers`, `GET /v1/supervisor/stats` (all three need `POLYCARE_SUPERVISOR_TOKEN`, 16+ chars), `GET /dashboard` (`app/static/dashboard.html`). `app/radar.py` mirrors the Kotlin `OutbreakRadar` (window in whole ISO weeks: this week and last; env-tunable thresholds). `.env.example`, `compose.yaml`, the gateway README and `proto/sync.proto` (a comment) document the additions. New tests: `tests/test_team.py` (radar clustering, GAP validation).
+
+**Not run:** the gateway was never started (it needs a Qdrant Cloud URL and key), `test_team.py` was not run, and `ruff`/`mypy` were not run. Unverified assumptions: Qdrant returns named vector `"stub"` as a dict on `scroll(with_vectors=True)`; the `kind` payload filter on `sync_ops` works without a payload index at this volume.
+
+---
+
+### 8. UI: accessibility, alignment, structure
+
+New `app/.../ui/components/Controls.kt`: `AppIconButton` (48 dp, spoken label), `ScreenHeader` (48 dp back/menu button, heading semantics, ink text on an accent-tinted disc because pink/rose fail contrast as icon colour), `PrimaryButton` / `SecondaryButton` (52 dp min height, role Button, disabled state), `ToggleRow` (whole row is the checkbox target), `ChoiceChip` + `ChipRow` (48 dp, selected state, wraps), `tapTarget`. `Format.kt`: `agoLabel`, `bytesLabel`. `LabelledField` now uses a real floating **label** and takes `imeAction`, `supporting`, `singleLine`.
+
+- **Navigation** (`PolyCareRoot.kt`): the floating icon-only pill is replaced by a solid bottom bar with four always-labelled tabs, >= 64 dp, role Tab with selected state; the drawer lists every built screen and scrolls; new routes medicine, sync, radar, conflicts. Bug fixed: the Ask tab was never highlighted because its route carried arguments.
+- **Home:** equal-height 2-column tiles, semantic ask bar + separate 56 dp mic, attention banners (radar alert, records to review), "On this phone" shows the real LLM state, skills count and last sync.
+- **Ask:** suggestion chips, labelled field, 56 dp mic with a pulsing ring, live-region status, streaming caret, passage shown immediately while the explanation streams, speed row, supervisor-answer card.
+- **Triage:** wrapping category chips, toggleable 56 dp sign rows, decision announced via live region, radar card.
+- **Households / Scan / Due list / Search / Memory / System:** same header; consent and high-risk toggles are `ToggleRow`; actions are `PrimaryButton`/`SecondaryButton`; filters and tabs are `ChoiceChip`/selectable tabs; notes fields are multi-line; error text moved from Rose to Red for contrast. (Households and Scan merged with the teammate's storage-warning and PaddleOCR changes; git auto-merged them and they compile.)
+- **Due list export is real:** a CSV via `CreateDocument("text/csv")` with counts and incentives per visit type plus one row per visit (date, type, high-risk, incentive). **No names and no visit notes.** The month label is the current month.
+
+**Not verified:** any TalkBack traversal order, font scale 200%, the `IntrinsicSize` tile row with long titles, small-width phones, landscape.
+
+---
+
+### 9. What is NOT built (be honest with users)
+
+Skill Factory; knowledge slicing / Qdrant partial snapshots; semantic Merkle anti-entropy; Chaos Panel; phone-to-phone mesh; WorkManager scheduling (see 3); Hindi speech verification (whisper-small installed, never run); trained LoRA adapters; removal of seeded demo households; speculative decoding with a separate draft model (only prompt-lookup exists); a real op-log replay for households; Vulkan/GPU inference (their plumbing exists, the backend is OFF); pulling other phones' ops from `/v1/ops/pull`; real Qdrant Cloud verification of any of the gateway work.
+
+---
+
+### 10. Verification checklist (do these in order)
+
+1. Build and install: `cd android && ./gradlew.bat :app:installDebug` (needs section 0). The phone needs the two model files from section 0 and, for OCR, the Paddle assets.
+2. **LLM speed and correctness:** `adb shell am start -n org.polycare.app/.MainActivity --ez llm_check true`, ask the same 3 questions twice; read `PolyCareEvent` in logcat (`tokensPerSecond`, `drafted`/`accepted`, `cachedPromptTokens`, `promptMs`). Set `speculativeDraftTokens = 0` and confirm identical text. Record numbers in STATUS.md (the 17.5 tok/s baseline was measured on the Xiaomi).
+3. **Restart safety:** `household_check`, `adb shell am force-stop`, relaunch, confirm counts (their encrypted store); confirm the op-log survives (Sync screen "waiting" count).
+4. **Gateway:** copy `cloud/.env.example` to `cloud/.env` (all secrets 32+ chars, plus `POLYCARE_SUPERVISOR_TOKEN`), set a Qdrant Cloud https URL and key, `docker compose --env-file cloud/.env -f cloud/compose.yaml up --build`, open `/dashboard`. Run `cd cloud/gateway && uv run python -m unittest discover tests` (the teammate's 9 tests plus `test_team.py`).
+5. **First contact (highest risk):** in the app set the gateway address (`http://<PC LAN IP>:8080`) and the enrollment token, tap Test connection (expect "registered"), log a triage case, Sync now. If the gateway answers "Operation signature is invalid", compare `WireCodec.signedBytes` output with the gateway's `_canonical(_signed_fields(op))` for the same op (print both, byte for byte).
+6. **Privacy proof:** after a sync, inspect the Qdrant `sync_ops` collection: only `SIGNAL` and `GAP` kinds, no names. `curl` a signed-looking `VISIT` op: expect 403.
+7. **Radar:** log 3 similar cases with 2 village names (two phones, or change the village between cases), sync, expect an ALERT on the dashboard and on the phone after the next sync. Answer a gap on the dashboard, sync, ask the same question.
+8. **Kill during sync:** start a sync with many ops, `force-stop` mid-way, relaunch and sync again: no loss, no duplicates (`duplicate_op_ids` rises). CLAUDE.md requires this test for any sync change and it does not exist yet.
+9. **Conflicts:** export from phone A, edit a member's age on phone B, import on B, resolve each way, Undo.
+10. **Accessibility:** TalkBack through Home, Ask, Triage, Sync, Conflict inbox; largest font size; nothing clipped, every control announced.
+11. Write the missing tests: `SyncGate`, `WireCodec` (golden bytes vs the gateway), `SignalCodec` (f16 rounding, simhash stability), `OutbreakRadar`, `ConflictDetector` (pure Kotlin in `core-common`), `OpLogStore` idempotency and cursor+head atomicity (instrumented, needs Keystore). Run `ruff` and `mypy --strict` on `cloud/gateway`.
+
+### 11. Where things are (quick map)
+
+`android/core-common/.../sync|radar|conflict` pure logic (`SyncGate`, `WireCodec`, `SignalCodec`, `OutbreakRadar`, `ConflictDetector`) · `android/app/.../sync` client (`OpLogStore`, `DeviceIdentity`, `GatewayClient`, `SyncRepository`) · `android/app/.../radar|conflicts|team|medicine|settings|security` · `android/app/.../ui/components/Controls.kt` shared UI · `android/core-llm/src/main/cpp/jni_bridge.cpp` speed work + their GPU param · `cloud/gateway/app/main.py` (theirs) + `team.py`/`radar.py`/`static/` (ours) · `proto/sync.proto` wire contract · `STATUS.md` top section mirrors this entry in short form.
+
+
+## 2026-09-29 (night) — Closing the remaining feature gaps: household lifecycle, background sync, team memory, guidance, signed updates, skill factory, chaos panel. WRITTEN, NOT RUN ON A PHONE.
+
+**Same caveat as the previous entry, and it matters more here: none of this was run or tested.** Verified only by compilation: `:core-common:compileKotlin`, `:app:compileDebugKotlin`, `:core-llm:buildCMakeDebug[arm64-v8a]`, `:app:compileDebugUnitTestKotlin`, `:core-common:compileTestKotlin`, and `py_compile` on every gateway module and the two tools. It **supersedes section 9 ("What is NOT built") and the "no WorkManager" and "cleartext everywhere" limits of the previous entry.** The verification checklist at the end is additive to the previous one.
+
+This pass was requested as "finish all the remaining core tasks, except testing". Scope decisions: where an item needed a cloud account, a GPU or a device measurement, I wrote the code and the hook but did not pretend it was exercised (called out per item).
+
+### 1. Household lifecycle (`households/HouseholdsRepository.kt`, `HouseholdsViewModel.kt`, `HouseholdsScreen.kt`, `duelist/*`)
+
+- **Edit:** `updateHousehold` / `updateMember` (op-first, via the existing `setHouseholdField` / `setMemberField`).
+- **Delete:** `deleteMember` (also erases that member's visits and due items), `deleteHousehold` (erases everything under it). Each removal is a `Op.DELETE` op, so a rebuild from the change log agrees with what the ASHA sees. Both need a confirmation dialog in the UI ("This cannot be undone").
+- **Consent withdrawal:** `withdrawConsent` erases members, visits and due items (as delete ops), sets `consentGiven = false` (a `field=consent` patch op) and keeps the household entry as "No consent", so the ASHA can see who declined. The screen then refuses to add members or visits.
+- **Log a visit** from the Households screen (`LogVisitForm`): who (whole household or a member), type, notes, danger-sign toggle, optional follow-up (Tomorrow / 3 days / 1 week / 2 weeks / 1 month). `recordVisit(..., followUpInDays)` and the new `scheduleFollowUp` create a real due item.
+- **No demo data:** `seedInitialDataIfEmpty` is deleted; a fresh install is empty. `HouseholdsRepositoryTest.recordsVisitAndCompletesDueListItem` was rewritten to create its own household and follow-up (not run).
+- **Due list on real dates:** `DueItem.dueDate` is an ISO date. `duelist/DueListViewModel.kt` has `dueDay` / `dueLabel` ("Overdue by 3 days", "Due today", "Tomorrow", "In 5 days"; a legacy label string is shown as is) and sorts high-risk first, then by date; `DueItemCard` shows the label. Due items and their completion are now ops (`OpEntity.DUE_ITEM`).
+- **Recovery:** when their store cannot be opened (`storageWarning`), the screen offers "Rebuild from the change log" behind a confirmation. `recoverFromOpLog()` replays household / member / visit / due ops (creations, `field`/`value` patches, deletes) and makes storage writable again. Records created before the change log existed are not in it and cannot be recovered; visit embeddings are not rebuilt (search falls back to term overlap until re-embedded).
+- **Op payloads now carry what a replay needs:** visits gained `memberName` and `incentive`; due items are new.
+- **Risk spots:** `deleteHousehold`/`withdrawConsent` write one op per child (a household with hundreds of visits writes hundreds of fsynced lines); the `if (!expanded) return@GlassCard` early return in `HouseholdCard`; a very old store with `dueDate = "Today"` labels shows the label unchanged.
+
+### 2. Op-log compaction (`sync/OpLogStore.kt`)
+
+- Every log line now records its own sequence number (`q`); the cursor file holds `"<cursor> <chain head b64> <max seq>"` (older two-field files still load). Sequence numbers are never reused, even if compaction drops the tail.
+- `compact()` (run at app start on a background scope; a no-op below 500 ops) only touches ops the cursor has passed: an entity whose last settled op is a delete is dropped entirely; every other entity's history is folded into one op carrying its final fields (field patches applied) with the last op's id, HLC and seq; signals older than 30 days are dropped. Pending ops are untouched. Ordering makes a kill safe: the cursor file (with max seq) is written **before** the log is replaced.
+- **Risk:** compaction rewrites the encrypted log; it has never run. A bug here can lose history, so test it on a copy first (checklist item 3).
+
+### 3. Background sync (`sync/SyncWorker.kt`, `SyncRepository.kt`, `OpLogStore.kt`, `PolyCareApp.kt`)
+
+- `SyncWorker` (WorkManager `CoroutineWorker`, reaches the singletons through a Hilt `EntryPoint`). Constraints: network connected and battery not low. `SyncScheduler.schedule` (app start) queues a periodic run every `Sync.periodicHours` (6) and one soon; `enqueueSoon` (also called from `OpLogStore.append` whenever a signal, a gap upsert, a tip or a vote is recorded) waits `Sync.stableWindowMs` (30 s) and uses `KEEP`, so a burst of records causes one run.
+- On a **metered** connection a run sends at most `Sync.meteredBudgetBytes` (64 KB): `syncNow(byteBudget)` flushes and stops before a chunk would exceed it, and the remainder stays pending.
+- A failed run returns `Result.retry()` (exponential back-off). The old in-process `ConnectivityManager` callback (`startAutoSync`) is removed.
+
+### 4. HTTPS (`AndroidManifest.xml`, `res/xml/network_security_config.xml`, `src/debug/res/xml/network_security_config.xml`)
+
+`usesCleartextTraffic="true"` is gone. Release builds use `network_security_config.xml` (cleartext not permitted). The **debug** source set provides a same-named file that permits cleartext, so a LAN `http://` gateway still works while developing. Their gateway additionally requires an https Qdrant URL. The Sync screen copy now says "Use https://. Plain http:// only works in debug builds."
+
+### 5. Team memory (`core-common/.../sync/TipGate.kt`, `SemanticMerkle.kt`, `SyncGate.kt`, `Op.kt`; `app/.../team/*`; `sync/AntiEntropy.kt`)
+
+- **New ops:** `OpEntity.TIP` ("tip") and `OpEntity.VOTE` ("vote"). `SyncGate.decide(op, metered)` now returns `Push`, `KeepLocal` or **`Defer`** (a tip below `METERED_MIN_PRIORITY` 0.05 on a metered link stays pending and ends that run, so the cursor never skips it).
+- **`TipGate`** (pure): `novelty = 1 - max cosine`; a candidate at cosine >= 0.92 to a known tip returns `VoteFor(existing)`; otherwise `Share(novelty, rknn, priority = novelty x (1 + rknn))` where `rknn` counts known tips whose k=3 nearest-neighbour radius (default 0.75 when fewer than 3 neighbours) the candidate falls inside. Priority only decides deferral on metered links; it does not reorder the outbox.
+- **`TeamMemoryRepository`:** `share(text)` (>= 12 chars; refuses phone numbers, Aadhaar-like numbers and e-mail addresses; embeds with e5; applies `TipGate`; appends a `TIP` op with `text, dense_f16, emb_model_id, simhash, village_code, priority`), `vote(id)` (one per tip, never for your own), `search(query)` (same model, cosine >= 0.80, not superseded), `applyRemote(tip)` (idempotent by id; files near-duplicate different-author different-words candidates and marks both `DISPUTED`), `setVotes`, `setStatus`. Persisted in `files/team_memory.json` (embeddings as float16 base64; team-visible data, so not sealed).
+- **`RemoteTipVerifier`:** rebuilds the canonical signed bytes of a fetched tip with `WireCodec` and checks the Ed25519 signature with the public key the gateway returns. This proves the text, embedding and author were not altered in transit; it does not protect against a gateway that lies about a key.
+- **`AntiEntropy.reconcile()`:** compares the phone's `SemanticMerkle` (built from `TeamMemoryRepository.merkleEntries()`) with the gateway's one level at a time, descends only into differing children, asks the gateway for the op ids in a differing 4-digit region, fetches the missing tips (chunks of 50), verifies, applies, files conflicts. `SyncRepository.pull` runs it, then `votes()` and guidance; each is wrapped so a gateway without the endpoint (404/405) does not fail the sync.
+- **`SemanticMerkle` spec** (Kotlin here, Python in `cloud/gateway/app/merkle.py`; they must stay identical): region = 4 lowercase hex digits of the 16-bit SimHash; `EMPTY = sha256("empty")`; leaf = `sha256("leaf|" + join("\n", sorted(opId@wall.logical)))`; inner = 16 child hashes, all `EMPTY` -> `EMPTY`, else `sha256("node|" + join(",", children))`.
+- **UI:** `Team tips` screen (route `tips`, drawer and Home tile): write a tip (with a "no names or numbers" warning), see all tips, vote. Ask shows "Shared by the team" cards next to an answer (`AskUi.Answered.teamTips`), with votes and a "may disagree" note. A tip that is close to a question also suppresses logging that question as a gap.
+- **Conflicts for tips:** `ConflictRecord.otherId`; `ConflictsRepository.addTipConflicts` / tip branches in `resolve` and `reopen` (keep mine hides theirs, use theirs hides mine, keep both clears both; Undo re-marks both `DISPUTED`). `TipContradictionChecker` asks the on-device model "do these conflict?" **on demand only** (a button in the inbox), never in a background sync; its answer is advice ("the model thinks...").
+- **Deviation from the architecture:** rknn is approximated; there is no atlas, so "diverged topics" are labelled with the first words of the newest tips; vote counts are a separate aggregate endpoint (a vote carries no region); resolving a tip conflict is local (no `Merge` op).
+- **Risk spots:** `SemanticMerkle` Kotlin vs Python parity has never been compared (write a golden-value test); `RemoteTipVerifier` payload number handling (ints become `Long`; canonical JSON prints digits); a tip whose embedding model differs from this phone's is stored but never compared or searched (invariant 4).
+
+### 6. Guidance cards (gateway `POST /v1/supervisor/guidance`, `GET /v1/guidance`; phone `team/TeamGuidanceRepository.kt`, `SyncRepository.pullGuidance`, Home, dashboard)
+
+A supervisor writes a card (title, body, village codes) from an alert on `/dashboard`; phones fetch cards whose villages are empty or include their village code (`SignalCodec.villageCode(settings.village)`) after their cursor. Home shows the newest un-dismissed cards as banners; tapping opens a dialog ("Got it" dismisses). Cards persist in `files/guidance_cards.json`.
+
+### 7. Signed updates and the Skill Factory
+
+- **Gateway** (`app/artifacts.py`): `GET /v1/artifacts`, `GET /v1/artifacts/{name}/{version}/file` with `Range` (206 + `Content-Range`, 416 on a bad range, basename-only path handling). Index and files live in `POLYCARE_ARTIFACT_DIR`. The gateway never signs anything.
+- **Publisher** (`tools/publish_artifact.py`): `keygen` writes an Ed25519 key and prints the public key; `skill` / `knowledge` sign `canonical({kind,name,version,sha256,size})`, copy the file into the artifact directory and update `index.json` (a knowledge entry carries its manifest).
+- **Phone** (`sync/ArtifactsRepository.kt`, `UpdatesCard.kt`, Sync -> Updates): needs the publisher's public key pasted in (`AppSettings.publisherKey`); `checkForUpdates()` keeps only entries with a valid signature, a compatible base model (skills: `base_model == LlmArtifacts.MODEL_ID`) or embedding model (knowledge: manifest `model_id`/`dim`), and a version not installed. `install()` downloads with resume into `files/artifacts/*.part` (`GatewayClient.download`), fsyncs, checks size and sha256 (mismatch -> `*.quarantine`), then installs: a skill is copied into `files/models/skills/` and merged into its `manifest.json` (what `SkillsRepository` verifies); a knowledge package is staged in `KnowledgeRepository.incomingDirectory` and `reloadAfterUpdate()` reopens the shard, which re-verifies and installs atomically.
+- **Skill Factory** (`cloud/skill-factory/factory.py`): fetches supervisor Q&A (`GET /v1/supervisor/qa`, optional `--keyword` filter), writes a skill spec, runs `tools/skills/train_skill.py <id> --spec <file>` (now accepts a spec and `extra_examples`), then publishes the GGUF with `publish_artifact.py`. Training needs the ML environment (torch/peft/transformers, HF base model) and is slow on CPU; it was **never run**.
+- **Risk spots:** canonical-JSON parity between `publish_artifact.py` (Python) and `ArtifactsRepository.signatureValid` (Kotlin `WireCodec`), same class of risk as the op signatures; the knowledge manifest's `file` must equal the entry's `file`.
+
+### 8. Speed and GPU
+
+- **Drafting from memory:** `LlamaNative.generate(..., maxDraft, draftText, sink)`; the JNI n-gram corpus is now `tokenize(draftText) + prompt + generated`, so drafts can come from text that is never decoded. `AskViewModel` passes the other retrieved passages plus matching team tips as `draftContext`. Exactness is unchanged (every accepted token is still verified). Benefit unmeasured.
+- **Vulkan (opt-in):** `-PpolycareVulkan=true` -> `-DPOLYCARE_VULKAN=ON` -> `GGML_VULKAN ON` in `core-llm/src/main/cpp/CMakeLists.txt`; default is OFF and unchanged. Runtime: System -> Experimental -> "Use the GPU" (`AppSettings.useGpu`); `LlmProvider` loads with `gpuLayers = -1` when set (their `LlamaEngine` falls back to CPU if the load fails). **The Vulkan build itself was not attempted**, and GPU inference is unverified.
+
+### 9. Chaos panel (`chaos/Chaos.kt`, `device/ChaosPanel.kt`, System screen, debug builds only)
+
+Switches inert unless the app is debuggable (`Chaos.enabled` set in `PolyCareApp`): gateway unreachable (`GatewayClient.call` and `download` throw a `ConnectException`); **connection lost** or **process killed** after the gateway accepted a chunk and before the cursor and chain head are saved (`SyncRepository` calls `Chaos.afterGatewayAck()`, this is the exact window the retry design must survive); clock 10 min fast or slow (`HlcClock` uses `Chaos.now()`); forced degradation rung (Home, System, app start use `Chaos.rung`). This is the harness for the "kill mid-operation" test CLAUDE.md requires.
+
+### 10. Gateway changes (`cloud/gateway/app/main.py`, `team.py`, `merkle.py`, `artifacts.py`)
+
+`main.py`: `TIP` branch and `_check_embedding` helper in `_validate_cloud_op`; `guidance` collection; payload index on `sync_ops.kind`; a fixed-window per-address rate limiter (`POLYCARE_RATE_LIMIT_PER_MIN`, default 240); the artifact router is mounted. `team.py`: merkle, ops/fetch, votes, guidance, supervisor QA. Not run: nothing here has met a real Qdrant, and `tests/test_team.py` does not cover the new endpoints.
+
+### 11. What is still not done
+
+The 1 M-point scale measurement and a low-end-phone pass (measurements, not code); Qdrant partial-snapshot transfer (artifact downloads replace it); a `Merge` op so a resolved tip conflict propagates; an atlas for labelling diverged topics; indexed paging for `/v1/ops/pull` and a merkle tree that is not rebuilt per request; phone-to-phone transfer beyond the Conflict Inbox file exchange; a web dashboard beyond the single supervisor page; trained LoRA adapters; Hindi speech verification; TalkBack pass; Vulkan build verification.
+
+### 12. Verification checklist additions (after the previous entry's)
+
+1. Households: add, edit, delete a member and a household, withdraw consent, log a visit with a follow-up, force-stop, reopen: everything matches. Then corrupt `households_store.enc` on a debug device (or delete the Keystore key) and use "Rebuild from the change log".
+2. Due list: schedule follow-ups for today, tomorrow, yesterday (skew the Chaos clock) and check the labels and order.
+3. Compaction: copy `files/oplog/` off the phone, run `compact()` with >500 ops (add a debug hook or lower `COMPACT_MIN_OPS`), rebuild households from the compacted log and compare with the live view; force-stop during compaction.
+4. WorkManager: `adb shell dumpsys jobscheduler | grep polycare`, kill the app, put the phone on and off a network, confirm the run happens; on mobile data confirm a run stops at about 64 KB.
+5. Release build: confirm `http://` is refused and `https://` works.
+6. Team memory: two phones (or one plus a hand-signed op), share a tip on A, sync, sync B, see it in B's Team tips and Ask; share a near-duplicate on B and confirm it becomes a vote; share two similar but different tips and confirm a conflict appears; try "Ask the on-device model".
+7. Merkle parity: compute a small tree in Kotlin and Python for the same op list and compare every child hash.
+8. Guidance: alert on the dashboard -> send a card -> it appears on a phone in that village and not on one in another.
+9. Updates: `keygen`, `publish`, paste the public key, Check for updates; interrupt a download (Chaos offline) and confirm it resumes; corrupt the file on the server and confirm quarantine; publish an entry signed by a different key and confirm it is refused.
+10. Chaos: drop-after-ack and kill-after-ack, then sync again; the gateway must report the chunk as `duplicate_op_ids` and nothing may be lost or sent twice.
+11. Skill Factory: `factory.py --dry-run` first (writes the spec only), then a real run on a machine with the ML environment.
+12. Write the missing tests: `SyncGate` (incl. `Defer`), `TipGate`, `SemanticMerkle` (golden hashes shared with `merkle.py`), `SignalCodec` (f16 round trip, simhash stability), `WireCodec` (golden bytes shared with the gateway), `OpLogStore` compaction (instrumented), `RemoteTipVerifier`, and gateway tests for `TIP`, merkle, fetch, votes, guidance, artifacts `Range`.

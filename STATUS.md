@@ -2,7 +2,37 @@
 
 Live dashboard. Updated after every step; history and reasoning are in [WORKLOG.md](WORKLOG.md).
 
-**Last updated:** 2026-09-29 · **Note:** per direct instruction, this project no longer tracks work against MILESTONES.md (being deleted) — below this line, entries describe what's built and what isn't in plain terms, not milestone numbers. Older entries above/below that still say "M0/M1/M2/M3" are historical record, not a live checklist to keep syncing. · **Test phones:** Xiaomi 2406ERN9CI, Android 16, 6 GB class; Realme RMX2151, Android 12, 6 GB class
+**Last updated:** 2026-09-29 (late) · **Note:** per direct instruction, this project no longer tracks work against MILESTONES.md (being deleted) — below this line, entries describe what's built and what isn't in plain terms, not milestone numbers. Older entries above/below that still say "M0/M1/M2/M3" are historical record, not a live checklist to keep syncing. · **Test phones:** Xiaomi 2406ERN9CI, Android 16, 6 GB class; Realme RMX2151, Android 12, 6 GB class
+
+---
+
+## Latest (2026-09-29 late): merged with the OCR/sync-gateway work; phone sync client, radar, conflicts, faster LLM, accessible UI. Written, not yet run on a phone.
+
+**Nothing in this section has been run or tested on a phone.** It compiles (`:core-common:compileKotlin`, `:app:compileDebugKotlin`, a clean `:core-llm:buildCMakeDebug[arm64-v8a]`, unit-test sources) and that is all that was checked.
+
+**Merge rule used:** where our work overlapped LovekeshAnand's commits (`ocr-package`, `fastembed-fix`), theirs won; where it did not, ours stayed. Concretely: household encryption is **their** `HouseholdStoreCipher` (encrypted file in the no-backup dir, storage-health warning); the gateway is **their** Qdrant-backed one (`cloud/gateway/app`) and `proto/sync.proto` is the wire contract; GPU-layer plumbing and CMake flags in `core-llm` are theirs (Vulkan is still OFF, so it does nothing yet); OCR is their PaddleOCR module. Our first, SQLite-based gateway and its docker-compose were deleted.
+
+- **Phone sync client for their protocol** (`sync/`): registers the phone's Ed25519 key (enrollment token), authenticates by signing the challenge nonce, and pushes **signed, hash-chained** ops. Signals are shaped exactly as their gateway demands: a 384-value float16 e5 embedding, embedding model id, 16-bit SimHash, village code, ISO week, age band, sex. Only signals and gaps ever leave; households, members and visits are kept local by the Sync Gate and refused again by the gateway. The op-log cursor and chain head advance together only after the gateway acks the exact head we computed. Ed25519 comes from BouncyCastle (the platform only has it from API 33).
+- **Op-log** (`sync/OpLogStore.kt`): every household/member/visit/gap/signal mutation is appended (encrypted, fsynced) before the view changes. Households still load from their encrypted store; only gaps and signals are rebuilt from the log.
+- **Outbreak Radar** (`radar/`, `core-common/.../OutbreakRadar.kt`): Triage can log a de-identified case (danger signs, village, week, age band, sex); the phone clusters its own signals, and the gateway clusters everyone's embeddings and returns alerts.
+- **Team features added to their gateway** (`cloud/gateway/app/team.py`, kept separate so their sync code is unchanged): a `GAP` op kind, supervisor answers (`POST /v1/supervisor/answers`, phones fetch `GET /v1/answers`), `GET /v1/radar/alerts`, and a supervisor dashboard at `/dashboard` (needs `POLYCARE_SUPERVISOR_TOKEN`). Tests in `tests/test_team.py`.
+- **Conflict Inbox** (`conflicts/`): import/export a teammate's consented-household file, field-level concurrent-edit detection, both values kept, every resolution undoable.
+- **Medicines & counselling cards** (`medicine/`): 15 topics, each a query into the cited knowledge base (no invented clinical text).
+- **Faster answers** (`jni_bridge.cpp`): KV-cache prefix reuse, greedy decoding, exact prompt-lookup speculative decoding, model loaded and warmed at app start. Speedup is *unmeasured*; measure with `--ez llm_check true`.
+- **UI accessibility**: shared controls (`ui/components/Controls.kt`: 48 dp targets, roles, labels, live regions), an always-labelled bottom bar, real field labels, a real CSV export for the monthly report (counts only), real ISO visit dates.
+- **Build fix (Windows):** a space in the user name broke the NDK link (`clang++` short path). Local fix: junction `C:\androidsdk` to the SDK and `android/local.properties` with `sdk.dir=C\:/androidsdk` (gitignored).
+
+**Second pass (same day): the remaining feature gaps, all still untested on a phone.**
+
+- **Households can be edited, deleted and have consent withdrawn** (everything about a family is erased, as delete ops); visits can be logged from the Households screen with a follow-up date; the demo households are gone, so a new install starts empty; the Due list is driven by real ISO dates (Overdue / Today / Tomorrow); the household store can be rebuilt from the op-log after a storage failure (explicit button); the op-log can be compacted (`OpLogStore.compact`, sequence numbers preserved).
+- **Background sync** through WorkManager (survives the app being closed and killed), with a small data budget on metered connections. Release builds are **https only**; debug builds still allow a LAN `http://` gateway (`src/debug/res/xml/network_security_config.xml`).
+- **Team memory:** share a tip (`Team tips`), novelty gate turns near-duplicates into votes, tips from other phones arrive via semantic-Merkle reconciliation and are signature-checked, tips show next to answers in Ask, possible contradictions go to the Conflict Inbox (optional on-device model check).
+- **Guidance cards** from supervisors reach the villages an alert names (Home banner); **signed updates** (skills and knowledge) download with resume, are verified against a pinned publisher key, and install atomically (Sync -> Updates). `cloud/skill-factory/factory.py` turns supervisor answers plus knowledge into a new LoRA skill and publishes it.
+- **Speculative decoding** now also drafts from the other retrieved passages and tips ("from memory"). **Vulkan** is an opt-in build flag (`-PpolycareVulkan=true`) plus a System toggle; default builds are unchanged.
+- **Chaos panel** (System, debug builds only): gateway unreachable, connection lost or process killed right after the gateway accepts a chunk, clock 10 min fast/slow, forced degradation rung.
+- Gateway: `TIP` kind, merkle/fetch/votes endpoints, guidance, artifact server with `Range`, rate limit, `kind` payload index.
+
+**Known limits:** their gateway must run as a single replica and its pull scrolls and sorts (their note); the merkle tree is rebuilt per request from a scan. Signals recorded while the search model is missing stay on the phone. The phone does not use `/v1/ops/pull`. A tip conflict resolved on one phone is not propagated (no `Merge` op). No Qdrant partial-snapshot transfer. No web dashboard beyond the single supervisor page. Phone-to-phone transfer exists only as the Conflict Inbox file exchange. LoRA adapters still have to be trained. The 1 M-point scale measurement and a low-end-phone pass have not been done (they are measurements, not code).
 
 ---
 

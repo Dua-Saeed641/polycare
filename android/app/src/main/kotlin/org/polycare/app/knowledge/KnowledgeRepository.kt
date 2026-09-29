@@ -140,6 +140,18 @@ class KnowledgeRepository @Inject constructor(
         "बच्चे को दस्त हो तो क्या करें"
     )
 
+    /** Where a downloaded knowledge package (zip + its manifest json) is staged; [open] installs it. */
+    val incomingDirectory: File get() = incoming.also { it.mkdirs() }
+
+    /**
+     * Closes the open shard and reopens it, which verifies and installs anything staged in
+     * [incomingDirectory]. The previous package stays in place if the new one fails a check.
+     */
+    suspend fun reloadAfterUpdate(): State {
+        mutex.withLock { store?.close(); store = null }
+        return open()
+    }
+
     suspend fun open(): State = mutex.withLock {
         if (store != null) return _state.value
         _state.value = State.Loading
