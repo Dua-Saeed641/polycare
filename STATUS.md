@@ -2,9 +2,38 @@
 
 Detailed implementation log; the live completion overview is in [MILESTONES.md](MILESTONES.md). History and reasoning are in [WORKLOG.md](WORKLOG.md).
 
-**Last updated:** 2026-09-30 · MILESTONES.md is the live completion overview. This file retains implementation detail; older milestone references are historical. · **Test phones:** Xiaomi 2406ERN9CI, Android 16, 6 GB class; Realme RMX2151, Android 12, 6 GB class
+**Last updated:** 2026-10-03 · MILESTONES.md is the live completion overview. This file retains implementation detail; older milestone references are historical. · **Test phones:** Xiaomi 2406ERN9CI, Android 16, 6 GB class; Realme RMX2151, Android 12, 6 GB class
 
 ---
+
+## Latest verification: Hindi text layout, colour contrast and doc integrity (2026-10-03)
+
+- Fixed a visible layout defect seen on the phone: on the Ask card the Hindi source line
+  ("आशा मॉड्यूल 7 - ... · p9") was painted on top of the "Source" label. `MetricRow` measured its
+  value `Text` unbounded inside an `Arrangement.SpaceBetween` row, so a long Devanagari string
+  overflowed its slot instead of wrapping. Hindi titles are routinely longer than their English
+  counterparts, so this hit the primary Hindi reader on the most-used screen. The value is now
+  bounded with `weight` and wraps; a new `stacked` variant puts the label above the value and is
+  used for sentence-length values (Ask/Triage source, Device Check phone model). English is
+  unaffected.
+- Audited brand contrast against WCAG AA and fixed the failures. `Brand.Rose` (3.48:1 on paper)
+  and `Brand.Red` (3.73:1) are brand-accurate but below the 4.5:1 body-text minimum. Added
+  `Brand.RoseInk` (6.6:1) and `Brand.RedInk` (5.9:1) and switched the 13 places where those colours
+  are *read as text* (overdue dates, "High risk", warning and consent lines, sync errors, the
+  `REFER_NOW` triage decision). The vivid `Rose`/`Red` are kept for fills, dots, borders and
+  accent edges, where they are decorative or always sit beside a text label. Triage now carries
+  two colours per severity, `color` for the dot/accent and `inkColor` for the sentence.
+- Restored `PROJECT_DESCRIPTION.md`, which had been emptied to 0 bytes in the working tree while
+  `CLAUDE.md` tells every contributor to read it first. Verified byte-exact against
+  `git cat-file` (blob `04e6e40`), so it is the committed text and not a re-typed approximation.
+- Not fixed, deliberately: `res/values-hi/strings.xml` holds 19 correct Hindi strings, but nothing
+  in the app calls `R.string.*` - the UI is hardcoded English, so the Hindi overlay only ever
+  changed the launcher label. Localising the whole UI is the real M10 "Hindi and English UI"
+  work, not a drive-by fix, and the file is kept so the translations are not lost.
+- Verified with `gradlew.bat :app:compileDebugKotlin` (BUILD SUCCESSFUL). Contrast ratios are
+  computed from the palette, not measured on-device, and a real TalkBack pass and a
+  large-font pass are still open - see MILESTONES M10.
+
 
 ## Latest verification: OCR, device tests, navigation and accessibility (2026-09-30)
 

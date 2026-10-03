@@ -115,7 +115,7 @@ private fun OverviewCard(stats: KnowledgeStats?, filter: MemoryFilter, onSource:
                 Text(
                     "${stats.ambiguous} row(s) print several vaccines together — flagged, not guessed at",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Brand.Red,
+                    color = Brand.RedInk,
                 )
             }
         }

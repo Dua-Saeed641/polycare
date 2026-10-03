@@ -222,7 +222,7 @@ private fun HitCard(hit: KnowledgeHit, topScore: Float) {
                 Text(
                     "Several vaccines share this printed row. Check the printed schedule.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Brand.Red,
+                    color = Brand.RedInk,
                 )
             }
         }

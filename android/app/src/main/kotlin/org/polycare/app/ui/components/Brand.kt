@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,6 +33,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -115,16 +117,44 @@ fun StatusPill(text: String, dot: Color, modifier: Modifier = Modifier) {
     }
 }
 
-/** Label on the left, value on the right, hairline below. */
+/**
+ * Label on the left, value on the right, hairline below.
+ *
+ * The value is bounded by `weight` and wraps, instead of being measured unbounded. A source title
+ * in Hindi is far longer than its English counterpart, and under `Arrangement.SpaceBetween` an
+ * unbounded `Text` overflowed its slot and painted straight over the label. Bounding it keeps a
+ * long value wrapping to a second line with the label still legible.
+ *
+ * [stacked] puts the label above a full-width value instead, which reads better for values that
+ * are a sentence rather than a number (a source title, a memory size).
+ */
 @Composable
-fun MetricRow(label: String, value: String, modifier: Modifier = Modifier, valueColor: Color = Brand.Ink) {
-    Row(
-        modifier.fillMaxWidth().padding(vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = Brand.InkMuted)
-        Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = valueColor)
+fun MetricRow(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    valueColor: Color = Brand.Ink,
+    stacked: Boolean = false,
+) {
+    Column(modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+        if (stacked) {
+            Text(label, style = MaterialTheme.typography.bodyMedium, color = Brand.InkMuted)
+            Spacer(Modifier.height(2.dp))
+            Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = valueColor)
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(label, style = MaterialTheme.typography.bodyMedium, color = Brand.InkMuted)
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    value,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = valueColor,
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.End,
+                )
+            }
+        }
     }
 }
 

@@ -42,7 +42,7 @@ sealed interface AskUi {
 
     /**
      * [generated] is null until the on-device LLM produces an explanation (or stays null if it
-     * is not installed — this is the Resource Governor's RECALL rung in practice: the retrieved
+     * is not installed â€” this is the Resource Governor's RECALL rung in practice: the retrieved
      * passage alone is still a complete, sourced answer, invariant 6).
      */
     data class Answered(
@@ -52,7 +52,7 @@ sealed interface AskUi {
         val generated: String? = null,
         val generating: Boolean = false,
         val tokensPerSecond: Double? = null,
-        /** Which trained skill answered, if any (ARCHITECTURE.md §5.1); null means base model. */
+        /** Which trained skill answered, if any (ARCHITECTURE.md Â§5.1); null means base model. */
         val skill: String? = null,
         /** Share of speculatively drafted tokens the model confirmed (0..1), null if none were drafted. */
         val draftAcceptance: Double? = null,
@@ -70,8 +70,8 @@ sealed interface AskUi {
 }
 
 /**
- * M2 "Ask": retrieve the best matching protocol passage, then — if the on-device LLM (M0) is
- * installed — have it explain that passage in plain language, grounded and cited. The model
+ * M2 "Ask": retrieve the best matching protocol passage, then â€” if the on-device LLM (M0) is
+ * installed â€” have it explain that passage in plain language, grounded and cited. The model
  * only ever explains a passage that was already retrieved; it is never asked to answer from its
  * own knowledge, which is the whole point of PromptFormat.ask's system prompt.
  */
@@ -123,17 +123,17 @@ class AskViewModel @Inject constructor(
             _voice.value = VoiceUi.Transcribing
             val ready = whisper.get()
             if (ready == null) {
-                _voice.value = VoiceUi.Failed("Voice model not installed — type your question instead")
+                _voice.value = VoiceUi.Failed("Voice model not installed â€” type your question instead")
                 return@launch
             }
             val text = runCatching { ready.engine.transcribe(pcm, language = "auto") }.getOrElse {
                 events.record(Category.ASK, "Voice transcription failed", mapOf("error" to it.javaClass.simpleName), Level.ERROR)
-                _voice.value = VoiceUi.Failed("Could not understand that — try typing instead")
+                _voice.value = VoiceUi.Failed("Could not understand that â€” try typing instead")
                 return@launch
             }
             events.record(Category.ASK, "Voice question transcribed", mapOf("chars" to text.length, "samples" to pcm.size))
             _voice.value = VoiceUi.Idle
-            if (text.isNotBlank()) ask(text) else _voice.value = VoiceUi.Failed("Didn't catch that — try again")
+            if (text.isNotBlank()) ask(text) else _voice.value = VoiceUi.Failed("Didn't catch that â€” try again")
         }
     }
 
@@ -170,10 +170,10 @@ class AskViewModel @Inject constructor(
                 return@launch
             }
 
-            // ARCHITECTURE.md §5.1: route to a trained skill by comparing the question's embedding
+            // ARCHITECTURE.md Â§5.1: route to a trained skill by comparing the question's embedding
             // to each skill's card, blend the top two if they're close, or fall back to the base
             // model alone. Routing never touches which passage was retrieved or the confidence
-            // badge above — it only picks which adapter, if any, explains that passage.
+            // badge above â€” it only picks which adapter, if any, explains that passage.
             val route = skillRouter.route(value)
             ready.engine.clearSkills()
             for (w in route.weights) ready.engine.loadSkill(w.file)
@@ -200,7 +200,7 @@ class AskViewModel @Inject constructor(
                     is GenerationEvent.Done -> {
                         (_ui.value as? AskUi.Answered)?.let {
                             _ui.value = it.copy(
-                                generated = text.toString(), generating = false, tokensPerSecond = event.stats.tokensPerSecond,
+                                generated = shortenResponse(text.toString()), generating = false, tokensPerSecond = event.stats.tokensPerSecond,
                                 draftAcceptance = if (event.stats.draftedTokens > 0) event.stats.draftAcceptance else null,
                                 cachedPromptTokens = event.stats.reusedPrefixTokens, promptMs = event.stats.promptMs,
                             )
@@ -235,3 +235,16 @@ class AskViewModel @Inject constructor(
         recorder.requestStop() // leaving the screen mid-recording must not leak an open AudioRecord
     }
 }
+
+
+    /** Enforce 2-3 sentence limit. If model outputs verbatim source, truncate to first 3 sentences. */
+    private fun shortenResponse(text: String): String {
+        // Split on sentence boundaries (., !, ?, followed by space or end)
+        val sentences = text.split(Regex("(?<=[.!?])\\s+(?=[A-Z])|(?<=[.!?])$")).filter { it.isNotBlank() }
+        return when {
+            sentences.size <= 3 -> text.trim()
+            else -> sentences.take(3).joinToString(" ").trim()
+        }
+    }
+
+

@@ -15,9 +15,11 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <cstdint>
 #include <vector>
 
 #include "ggml.h"
+#include "ggml-backend.h"
 #include "llama.h"
 
 #define LOG_TAG "PolyCareLlm"
@@ -70,6 +72,56 @@ std::string tokenToPiece(const llama_vocab *vocab, llama_token token) {
     int32_t n = llama_token_to_piece(vocab, token, buf, sizeof(buf), 0, true);
     if (n < 0) return {};
     return {buf, (size_t) n};
+}
+
+// Strict UTF-8 -> UTF-16. Returns false if the input ends mid-character (a partial code point),
+// which is a normal state for a BPE/SentencePiece token that split a multi-byte character. A
+// trailing partial sequence is dropped rather than replaced, so the caller keeps streaming and
+// the remainder arrives with the next token.
+bool utf8ToUtf16(const std::string &in, std::u16string &out) {
+    out.clear();
+    size_t i = 0;
+    const size_t n = in.size();
+    while (i < n) {
+        const unsigned char c = (unsigned char) in[i];
+        uint32_t cp = 0;
+        size_t len = 0;
+        if (c < 0x80) {
+            cp = c;
+            len = 1;
+        } else if ((c & 0xE0) == 0xC0) {
+            cp = c & 0x1Fu;
+            len = 2;
+        } else if ((c & 0xF0) == 0xE0) {
+            cp = c & 0x0Fu;
+            len = 3;
+        } else if ((c & 0xF8) == 0xF0) {
+            cp = c & 0x07u;
+            len = 4;
+        } else {
+            return false; // stray continuation byte or invalid lead
+        }
+        if (i + len > n) return false; // truncated character: drop the fragment
+        for (size_t k = 1; k < len; k++) {
+            const unsigned char cc = (unsigned char) in[i + k];
+            if ((cc & 0xC0) != 0x80) return false;
+            cp = (cp << 6) | (cc & 0x3Fu);
+        }
+        // Reject overlong forms, surrogates and out-of-range code points.
+        if ((len == 2 && cp < 0x80) || (len == 3 && cp < 0x800) || (len == 4 && cp < 0x10000) ||
+            (cp >= 0xD800 && cp <= 0xDFFF) || cp > 0x10FFFF) {
+            return false;
+        }
+        if (cp < 0x10000) {
+            out.push_back((char16_t) cp);
+        } else {
+            cp -= 0x10000;
+            out.push_back((char16_t) (0xD800 + (cp >> 10)));
+            out.push_back((char16_t) (0xDC00 + (cp & 0x3FF)));
+        }
+        i += len;
+    }
+    return true;
 }
 
 // Feeds `n` tokens through llama_decode in chunks no larger than the context's batch size.
@@ -128,8 +180,26 @@ std::string adapterFingerprint(const std::vector<llama_adapter_lora *> &a, const
 extern "C" {
 
 JNIEXPORT void JNICALL
-Java_org_polycare_llm_LlamaNative_backendInit(JNIEnv *, jobject) {
-    std::call_once(g_backend_init, [] { llama_backend_init(); });
+Java_org_polycare_llm_LlamaNative_backendInit(JNIEnv *env, jobject, jstring nativeLibDir) {
+    std::call_once(g_backend_init, [env, nativeLibDir] {
+        // The build sets GGML_CPU_ALL_VARIANTS, so ggml ships one shared lib per ARM variant
+        // (libggml-cpu-android_armv8.0_1.so ... _armv9.2_2.so) instead of a single
+        // libggml-cpu.so. ggml finds those by dlopen()ing a *filesystem path*, and with
+        // user_search_path == nullptr it searches the executable directory, which on Android is
+        // "/" - so it finds nothing and llama_model_load_from_file fails with no CPU backend.
+        // Passing the app's nativeLibraryDir (a real directory the linker unpacked into) lets it
+        // enumerate and probe the variants. This is exactly what llama.cpp's own Android example
+        // does (examples/llama.android, ai_chat.cpp).
+        if (nativeLibDir != nullptr) {
+            const char *dir = env->GetStringUTFChars(nativeLibDir, nullptr);
+            if (dir != nullptr) {
+                LOGI("Loading ggml backend variants from %s", dir);
+                ggml_backend_load_all_from_path(dir);
+                env->ReleaseStringUTFChars(nativeLibDir, dir);
+            }
+        }
+        llama_backend_init();
+    });
 }
 
 // Updated signature to support GPU layers parameter
@@ -315,7 +385,21 @@ Java_org_polycare_llm_LlamaNative_generate(
         auto emit = [&](llama_token t) -> bool {
             std::string piece = tokenToPiece(engine->vocab, t);
             if (piece.empty()) return true;
-            jstring jpiece = env->NewStringUTF(piece.c_str());
+            // NewStringUTF demands *Modified* UTF-8 and aborts the whole process on malformed
+            // input. A tokenizer token is not guaranteed to be a whole character: for Devanagari
+            // (Hindi) and other multi-byte scripts a single token can be a fragment such as
+            // 0xE0 0xA4, which is not valid UTF-8 on its own. Passing that straight through
+            // crashed the app with "JNI DETECTED ERROR IN APPLICATION: input is not valid
+            // Modified UTF-8" the first time a Hindi answer streamed. Build the Java string from
+            // UTF-16 instead, and keep only whole characters - a fragment is dropped here and the
+            // rest of the character arrives with the following token.
+            std::u16string utf16;
+            if (!utf8ToUtf16(piece, utf16)) {
+                LOGE("dropping undecodable token piece (%zu bytes)", piece.size());
+                return true;
+            }
+            jstring jpiece = env->NewString(reinterpret_cast<const jchar *>(utf16.data()),
+                                           static_cast<jsize>(utf16.size()));
             env->CallVoidMethod(sink, onToken, jpiece);
             env->DeleteLocalRef(jpiece);
             if (env->ExceptionCheck()) { // Kotlin threw (e.g. coroutine cancelled)

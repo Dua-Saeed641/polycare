@@ -89,7 +89,8 @@ fun DeviceCheckScreen(
         SectionLabel("Hardware")
         Spacer(Modifier.height(12.dp))
         GlassCard(Modifier.fillMaxWidth(), padding = 20.dp) {
-            MetricRow("Phone", s.model)
+            // Device model strings are long (and longer in some locales); stack to avoid overflow.
+            MetricRow("Phone", s.model, stacked = true)
             Hairline()
             MetricRow("Android API", s.sdkInt.toString())
             Hairline()
@@ -108,7 +109,7 @@ fun DeviceCheckScreen(
             MetricRow(
                 "1 M-point knowledge slice",
                 if (current.fitsKnowledgeSlice) "Fits" else "Needs a smaller slice",
-                valueColor = if (current.fitsKnowledgeSlice) Brand.Positive else Brand.Rose,
+                valueColor = if (current.fitsKnowledgeSlice) Brand.Positive else Brand.RoseInk,
             )
         }
 
@@ -197,7 +198,7 @@ private fun VectorEngineCard(state: BenchState, onRun: (Int) -> Unit) {
                 Spacer(Modifier.height(16.dp))
             }
             is BenchState.Failed -> {
-                Text(state.message, style = MaterialTheme.typography.bodySmall, color = Brand.Red)
+                Text(state.message, style = MaterialTheme.typography.bodySmall, color = Brand.RedInk)
                 Spacer(Modifier.height(16.dp))
             }
         }

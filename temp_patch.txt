@@ -1,0 +1,7 @@
+﻿*** Begin Patch
+*** Update File: android/app/src/main/kotlin/org/polycare/app/knowledge/KnowledgeRepository.kt
+@@ class KnowledgeRepository @Inject constructor(
+-    @ApplicationContext context: Context,
++    @ApplicationContext private val context: Context,
+     private val embedders: EmbedderProvider,
+*** End Patch

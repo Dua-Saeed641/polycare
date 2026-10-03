@@ -1,0 +1,53 @@
+﻿*** Begin Patch
+*** Update File: android/app/src/main/kotlin/org/polycare/app/sync/SyncRepository.kt
+@@ suspend fun syncNow(byteBudget: Long? = null): SyncState = mutex.withLock {
+         if (settings.gatewayUrl.value.isBlank()) return@withLock _state.value
+-        
+-        // Check network quality before sync
+-        val networkState = networkMonitor.networkState.first()
+-        if (!networkState.isConnected) {
+-            val failed = SyncState.Failed(clock.now().wallMs, "No network connection", SyncStats())
+-            _state.value = failed
+-            return@withLock failed
+-        }
+-        
+         _state.value = SyncState.Running
+@@ try {
+             stats = withContext(Dispatchers.IO) { push(byteBudget) }
+             stats = withContext(Dispatchers.IO) { pull(stats) }
+-            
+-            // Collect and sync metrics after successful sync
+-            stats = withContext(Dispatchers.IO) { syncMetrics(stats, networkState) }
+-            
+             val done = SyncState.Done(clock.now().wallMs, stats.copy(durationMs = (System.nanoTime() - started) / 1_000_000))
+@@ private companion object {
+         const val KEY_LAST_SAVED = "last_saved"
+     }
+-    
+-    /**
+-     * Collect and sync aggregated metrics (privacy-preserving).
+-     * Called after successful sync to report operational statistics.
+-     */
+-    private suspend fun syncMetrics(stats: SyncStats, networkState: NetworkState) {
+-        try {
+-            val metrics = metricsCollector.collectMetrics(
+-                households = emptyList(),
+-                members = emptyList(),
+-                visitsToday = 0,
+-                questionsAsked = stats.answersReceived,
+-                networkQuality = networkState.quality
+-            )
+-            
+-            runCatching {
+-                client.syncMetrics(metrics)
+-            }.onFailure { e ->
+-                events.record(Category.SYNC, "Metrics sync failed", 
+-                    mapOf("error" to e.message.orEmpty()), Level.WARN)
+-            }
+-        } catch (e: Exception) {
+-            events.record(Category.SYNC, "Metrics collection failed",
+-                mapOf("error" to e.message.orEmpty()), Level.WARN)
+-        }
+-    }
+ }
+*** End Patch

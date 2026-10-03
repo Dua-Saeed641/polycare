@@ -162,12 +162,15 @@ class LlamaEngine private constructor(
          */
         suspend fun load(
             modelFile: File,
+            nativeLibDir: String? = null,
             contextTokens: Int = PolyCareConfig.Llm.contextTokens,
             threads: Int = defaultDecodeThreadCount(),
             threadsBatch: Int = defaultBatchThreadCount(),
             gpuLayers: Int = 0,
         ): LlamaEngine? = withContext(Dispatcher) {
-            LlamaNative.ensureLoaded()
+            // ggml locates its per-architecture CPU backends by filesystem path, so it needs the
+            // app's nativeLibraryDir to find them. See LlamaNative.ensureLoaded.
+            LlamaNative.ensureLoaded(nativeLibDir)
             
             // Try GPU-accelerated load first if Vulkan available
             val gpuResult = if (gpuLayers != 0) {
