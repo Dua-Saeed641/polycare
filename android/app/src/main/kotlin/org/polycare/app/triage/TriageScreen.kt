@@ -108,8 +108,17 @@ private fun DecisionCard(
     aiExplanation: String?,
     generating: Boolean,
 ) {
+    // Two colours per severity: [color] fills the dot and the card's accent edge, [inkColor]
+    // is the readable one for the decision text itself. REFER_NOW is the single most
+    // important sentence in the app and Brand.Red reaches only 3.73:1 on paper, so it uses
+    // Brand.RedInk (5.9:1) for the text.
     val color = when (decision) {
         TriageDecision.REFER_NOW -> Brand.Red
+        TriageDecision.REFER_24H -> Brand.Magenta
+        TriageDecision.CARE_AT_HOME -> Brand.Positive
+    }
+    val inkColor = when (decision) {
+        TriageDecision.REFER_NOW -> Brand.RedInk
         TriageDecision.REFER_24H -> Brand.Magenta
         TriageDecision.CARE_AT_HOME -> Brand.Positive
     }
@@ -118,12 +127,13 @@ private fun DecisionCard(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(12.dp).background(color, CircleShape))
             Spacer(Modifier.width(10.dp))
-            Text(decision.label, style = MaterialTheme.typography.headlineSmall, color = color, fontWeight = FontWeight.Medium)
+            Text(decision.label, style = MaterialTheme.typography.headlineSmall, color = inkColor, fontWeight = FontWeight.Medium)
         }
         Spacer(Modifier.height(10.dp))
         Text(explanation, style = MaterialTheme.typography.bodyMedium, color = Brand.Ink)
         Spacer(Modifier.height(10.dp))
-        MetricRow("Source", sourceTitle)
+        // Source titles are full sentences in Hindi; stacked so they wrap under the label.
+        MetricRow("Source", sourceTitle, stacked = true)
 
         when {
             aiExplanation != null -> {

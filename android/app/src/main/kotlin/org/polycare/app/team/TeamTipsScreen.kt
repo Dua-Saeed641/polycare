@@ -169,7 +169,7 @@ private fun TipCard(tip: TeamTip, onVote: (String) -> Unit) {
         }
         if (tip.status == TipStatus.DISPUTED) {
             Spacer(Modifier.height(6.dp))
-            Text("Check the Conflict inbox to compare it with a similar tip.", style = MaterialTheme.typography.bodySmall, color = Brand.Red)
+            Text("Check the Conflict inbox to compare it with a similar tip.", style = MaterialTheme.typography.bodySmall, color = Brand.RedInk)
         }
     }
 }

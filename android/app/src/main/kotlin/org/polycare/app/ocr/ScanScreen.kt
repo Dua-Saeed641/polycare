@@ -110,7 +110,7 @@ fun ScanScreen(
                 CircularProgressIndicator(Modifier.size(22.dp), color = Brand.Plum, strokeWidth = 2.dp)
             }
             is ScanUi.Failed -> GlassCard(Modifier.fillMaxWidth()) {
-                Text(state.reason, style = MaterialTheme.typography.titleMedium, color = Brand.Red)
+                Text(state.reason, style = MaterialTheme.typography.titleMedium, color = Brand.RedInk)
             }
             is ScanUi.Done -> {
                 McpConfirmationCard(
@@ -199,7 +199,7 @@ private fun McpConfirmationCard(
             )
             if (name.isNotBlank() && village.isNotBlank() && !consent) {
                 Spacer(Modifier.height(8.dp))
-                Text("Consent is required before saving to household memory.", style = MaterialTheme.typography.labelSmall, color = Brand.Red)
+                Text("Consent is required before saving to household memory.", style = MaterialTheme.typography.labelSmall, color = Brand.RedInk)
             }
         }
     }

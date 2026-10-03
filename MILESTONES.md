@@ -66,7 +66,7 @@ not implemented. A feature is not production complete just because a screen or e
 | M7 Edge-to-cloud workflows | Partial implementation | Live phone polled radar, answers, Merkle, votes, and village guidance successfully against empty collections; populated radar/gap/supervisor workflows remain unverified |
 | M8 Scale | Not implemented | No million-point device benchmark or cloud slice transfer |
 | M9 Reliability | Partial implementation | Degradation/chaos controls exist; failure matrix and low-end-phone tests missing |
-| M10 Complete product | In progress | Daily-task navigation and tool hub refreshed and visually checked on phone; TalkBack audit, clinical test set, and release build remain |
+| M10 Complete product | In progress | Daily-task navigation and tool hub refreshed and visually checked on phone; Hindi text-overlap and WCAG AA text-contrast defects fixed; TalkBack audit, large-font pass, clinical test set, and release build remain |
 | M11 Optional extras | Partial | Skill Factory exists; Nearby Connections and broader language coverage remain |
 
 **Verification snapshot (2026-09-30):** `gradlew.bat test :app:assembleDebug` passes; the connected
@@ -183,7 +183,7 @@ claims from untested code. This overview separates verified behavior from code t
 
 ### M10 — Complete product
 - [ ] Screens: Ask, Triage, Scan, Households, Due List, Skills Shelf, Memory Inspector, Search, Sync & Activity, Conflict Inbox, Settings
-- [ ] Hindi and English UI
+- [ ] Hindi and English UI *(content, speech and retrieval are bilingual and verified; the UI chrome itself is still hardcoded English. `res/values-hi/strings.xml` carries the translations but is unreferenced, so only the launcher label localises today)*
 - [ ] First-run setup: model download, device registration, consent, sample data
 - [ ] Clinical safety test set passes
 - [ ] Unit tests for op-log, sync and conflicts; end-to-end tests on a real phone

@@ -285,7 +285,9 @@ private fun AnswerCard(state: AskUi.Answered) {
             }
 
             Spacer(Modifier.height(12.dp))
-            MetricRow("Source", "${state.hit.title} · p${state.hit.page}")
+            // Hindi passage titles are long sentences; stacked so the title wraps to a
+            // second line instead of being squeezed against the label.
+            MetricRow("Source", "${state.hit.title} · p${state.hit.page}", stacked = true)
 
             if (state.generated != null) {
                 Row(
@@ -307,7 +309,7 @@ private fun AnswerCard(state: AskUi.Answered) {
                 Spacer(Modifier.height(12.dp))
                 Text(
                     "Low confidence — this may not be the right passage. When in doubt, refer or ask a supervisor.",
-                    style = MaterialTheme.typography.bodyMedium, color = Brand.Red,
+                    style = MaterialTheme.typography.bodyMedium, color = Brand.RedInk,
                 )
             }
             if (state.gapLogged) {

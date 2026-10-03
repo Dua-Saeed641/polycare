@@ -1,0 +1,304 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PolyCare - Supervisor Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-50">
+    <div class="min-h-screen">
+        <!-- Header -->
+        <header class="bg-purple-700 text-white shadow-lg">
+            <div class="container mx-auto px-4 py-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-3xl font-bold">PolyCare Supervisor Dashboard</h1>
+                        <p class="text-purple-200 mt-1">Real-time ASHA Worker Monitoring</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm text-purple-200">Last Updated</p>
+                        <p class="text-lg font-semibold" id="lastUpdate">Loading...</p>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="container mx-auto px-4 py-8">
+            <!-- Summary Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-500 text-sm font-medium">Active ASHA Workers</p>
+                            <p class="text-3xl font-bold text-purple-700 mt-2" id="totalWorkers">0</p>
+                        </div>
+                        <div class="bg-purple-100 rounded-full p-3">
+                            <svg class="w-8 h-8 text-purple-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-500 text-sm font-medium">Households Covered</p>
+                            <p class="text-3xl font-bold text-green-600 mt-2" id="totalHouseholds">0</p>
+                        </div>
+                        <div class="bg-green-100 rounded-full p-3">
+                            <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-500 text-sm font-medium">Visits This Week</p>
+                            <p class="text-3xl font-bold text-blue-600 mt-2" id="totalVisits">0</p>
+                        </div>
+                        <div class="bg-blue-100 rounded-full p-3">
+                            <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-500 text-sm font-medium">Questions Asked</p>
+                            <p class="text-3xl font-bold text-orange-600 mt-2" id="totalQuestions">0</p>
+                        </div>
+                        <div class="bg-orange-100 rounded-full p-3">
+                            <svg class="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Row -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4">Daily Activity Trend</h2>
+                    <canvas id="activityChart" height="200"></canvas>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4">Visit Types Distribution</h2>
+                    <canvas id="visitTypesChart" height="200"></canvas>
+                </div>
+            </div>
+
+            <!-- ASHA Workers Table -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">ASHA Workers Status</h2>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Device ID</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Households</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Villages</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Today's Visits</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Network</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Sync</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200" id="workersTable">
+                            <tr>
+                                <td colspan="6" class="px-6 py-4 text-center text-gray-500">Loading data...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Query Analytics -->
+            <div class="bg-white rounded-lg shadow-md p-6 mt-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Most Asked Questions (Topics)</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="topQueries">
+                    <div class="text-center text-gray-500">Loading...</div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Configuration
+        const API_BASE_URL = 'http://localhost:8000'; // Change to your gateway URL
+        
+        // Initialize charts
+        let activityChart, visitTypesChart;
+
+        // Fetch and update dashboard data
+        async function fetchDashboardData() {
+            try {
+                // Fetch summary metrics
+                const response = await fetch('${API_BASE_URL}/v1/metrics/summary?days=7');
+                const data = await response.json();
+
+                // Update summary cards
+                document.getElementById('totalWorkers').textContent = data.total_asha_workers || 0;
+                document.getElementById('totalHouseholds').textContent = data.total_households || 0;
+                document.getElementById('totalVisits').textContent = data.total_visits_week || 0;
+                document.getElementById('totalQuestions').textContent = data.total_questions || 0;
+                document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+
+                // Fetch individual device metrics
+                const devicesResponse = await fetch('${API_BASE_URL}/v1/metrics/devices');
+                const devicesData = await devicesResponse.json();
+                updateWorkersTable(devicesData.devices || []);
+
+                // Update charts
+                updateCharts(devicesData.devices || []);
+            } catch (error) {
+                console.error('Error fetching dashboard data:', error);
+                // Show demo data for testing
+                showDemoData();
+            }
+        }
+
+        function updateWorkersTable(devices) {
+            const tbody = document.getElementById('workersTable');
+            if (devices.length === 0) {
+                tbody.innerHTML = '<tr><td colspan=\"6\" class=\"px-6 py-4 text-center text-gray-500\">No active workers</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = devices.map(device => '
+                <tr class=\"hover:bg-gray-50\">
+                    <td class=\"px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900\">...</td>
+                    <td class=\"px-6 py-4 whitespace-nowrap text-sm text-gray-500\"></td>
+                    <td class=\"px-6 py-4 whitespace-nowrap text-sm text-gray-500\"></td>
+                    <td class=\"px-6 py-4 whitespace-nowrap text-sm text-gray-500\"></td>
+                    <td class=\"px-6 py-4 whitespace-nowrap\">
+                        <span class=\"px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800\">
+                            
+                        </span>
+                    </td>
+                    <td class=\"px-6 py-4 whitespace-nowrap text-sm text-gray-500\">
+                        
+                    </td>
+                </tr>
+            ').join('');
+        }
+
+        function updateCharts(devices) {
+            // Activity trend chart (demo data)
+            const ctx1 = document.getElementById('activityChart').getContext('2d');
+            if (activityChart) activityChart.destroy();
+            
+            activityChart = new Chart(ctx1, {
+                type: 'line',
+                data: {
+                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                    datasets: [{
+                        label: 'Visits',
+                        data: [12, 19, 15, 25, 22, 18, 20],
+                        borderColor: 'rgb(139, 92, 246)',
+                        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+
+            // Visit types chart
+            const ctx2 = document.getElementById('visitTypesChart').getContext('2d');
+            if (visitTypesChart) visitTypesChart.destroy();
+            
+            visitTypesChart = new Chart(ctx2, {
+                type: 'doughnut',
+                data: {
+                    labels: ['ANC', 'PNC', 'Immunization', 'Child Care', 'Other'],
+                    datasets: [{
+                        data: [30, 25, 20, 15, 10],
+                        backgroundColor: [
+                            'rgb(139, 92, 246)',
+                            'rgb(34, 197, 94)',
+                            'rgb(59, 130, 246)',
+                            'rgb(251, 146, 60)',
+                            'rgb(156, 163, 175)'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+        }
+
+        function showDemoData() {
+            // Demo data for testing
+            document.getElementById('totalWorkers').textContent = '15';
+            document.getElementById('totalHouseholds').textContent = '1,234';
+            document.getElementById('totalVisits').textContent = '287';
+            document.getElementById('totalQuestions').textContent = '156';
+            document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+
+            const demoDevices = [
+                {
+                    device_id: 'device-001-xiaomi-2406',
+                    total_households: 82,
+                    villages_count: 3,
+                    visits_today: 12,
+                    network_quality: 'EXCELLENT',
+                    timestamp: Date.now() / 1000
+                },
+                {
+                    device_id: 'device-002-realme-rmx2151',
+                    total_households: 67,
+                    villages_count: 2,
+                    visits_today: 8,
+                    network_quality: 'GOOD',
+                    timestamp: Date.now() / 1000 - 3600
+                }
+            ];
+
+            updateWorkersTable(demoDevices);
+            updateCharts(demoDevices);
+
+            // Top queries
+            document.getElementById('topQueries').innerHTML = '
+                <div class=\"bg-purple-50 rounded-lg p-4\">
+                    <p class=\"text-2xl font-bold text-purple-700\">42</p>
+                    <p class=\"text-sm text-gray-600 mt-1\">Pregnancy care</p>
+                </div>
+                <div class=\"bg-green-50 rounded-lg p-4\">
+                    <p class=\"text-2xl font-bold text-green-700\">38</p>
+                    <p class=\"text-sm text-gray-600 mt-1\">Immunization</p>
+                </div>
+                <div class=\"bg-blue-50 rounded-lg p-4\">
+                    <p class=\"text-2xl font-bold text-blue-700\">31</p>
+                    <p class=\"text-sm text-gray-600 mt-1\">Nutrition</p>
+                </div>
+            ';
+        }
+
+        // Initialize dashboard
+        fetchDashboardData();
+        
+        // Refresh every 30 seconds
+        setInterval(fetchDashboardData, 30000);
+    </script>
+</body>
+</html>

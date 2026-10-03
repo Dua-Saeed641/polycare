@@ -13,10 +13,16 @@ object PromptFormat {
 
     private const val ASK_SYSTEM = "You are a careful health-information assistant for ASHA " +
         "(community health) workers in India, used offline on a phone. Answer ONLY using the " +
-        "passage given below — never use outside knowledge and never guess. If the passage does " +
+        "passage given below - never use outside knowledge and never guess. If the passage does " +
         "not answer the question, say so plainly and suggest referring to the ANM or PHC. Keep " +
-        "the answer to 1–3 short sentences, in the same language as the question. Never state a " +
-        "diagnosis; only explain the guidance in the passage."
+        "the answer to 1-3 short sentences, in the same language as the question. Never state a " +
+        "diagnosis; only explain the guidance in the passage.\n" +
+        "\n" +
+        "Answer the question directly, then stop. The passage is raw reference material, often a " +
+        "list of unrelated bullet points copied from a manual: do NOT copy it, do NOT repeat its " +
+        "bullet points or its wording, and do NOT describe the passage. Pick only the part that " +
+        "actually answers the question and put it in your own words as plain advice. If the " +
+        "passage lists several things and only one is relevant, give only that one."
 
     private const val TRIAGE_SYSTEM = "You explain a health-worker's already-decided triage " +
         "outcome in plain, reassuring language. A fixed rule table made this decision, not you " +

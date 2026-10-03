@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App Name -->
+    <string name="app_name">पॉलीकेयर</string>
+    
+    <!-- Home Screen -->
+    <string name="home_welcome">स्वागत है</string>
+    <string name="ask_question">प्रश्न पूछें</string>
+    <string name="scan_document">दस्तावेज़ स्कैन करें</string>
+    <string name="households">परिवार</string>
+    <string name="visits">यात्राएं</string>
+    
+    <!-- Ask Screen -->
+    <string name="ask_hint">अपना स्वास्थ्य प्रश्न टाइप करें...</string>
+    <string name="voice_input">आवाज़ से पूछें</string>
+    <string name="send">भेजें</string>
+    
+    <!-- Sync Screen -->
+    <string name="sync_now">अभी समन्वयित करें</string>
+    <string name="last_sync">अंतिम समन्वयन</string>
+    <string name="syncing">समन्वयन हो रहा है...</string>
+    <string name="no_connection">कोई नेटवर्क कनेक्शन नहीं</string>
+    
+    <!-- Common -->
+    <string name="ok">ठीक है</string>
+    <string name="cancel">रद्द करें</string>
+    <string name="save">सहेजें</string>
+    <string name="loading">लोड हो रहा है...</string>
+</resources>

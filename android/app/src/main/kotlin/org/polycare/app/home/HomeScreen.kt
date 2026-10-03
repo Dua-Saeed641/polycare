@@ -52,6 +52,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.polycare.app.ai.EmbedderProvider
 import org.polycare.app.ai.LlmProvider
+import org.polycare.llm.LlmArtifacts
 import org.polycare.app.device.DeviceCheckViewModel
 import org.polycare.app.households.Visit
 import org.polycare.app.knowledge.KnowledgeRepository
@@ -67,7 +68,6 @@ import org.polycare.app.ui.components.Wordmark
 import org.polycare.app.ui.components.agoLabel
 import org.polycare.app.ui.theme.Brand
 import org.polycare.common.radar.AlertLevel
-import org.polycare.llm.LlmArtifacts
 
 @Composable
 fun HomeScreen(
@@ -134,7 +134,7 @@ fun HomeScreen(
             AttentionBanner(
                 title = "Outbreak alert: ${topAlert.alert.label}",
                 detail = "${topAlert.alert.signalCount} cases in ${topAlert.alert.villages.size} villages",
-                color = Brand.Red,
+                color = Brand.RedInk,
             ) { onNavigate("radar") }
         }
         liveCards.take(2).forEach { card ->
@@ -204,8 +204,8 @@ fun HomeScreen(
             MetricRow(
                 "Language model",
                 when (llm) {
-                    is LlmProvider.State.Ready -> "Ready · ${LlmArtifacts.shortName}"
-                    LlmProvider.State.Loading -> "Loading…"
+                    is LlmProvider.State.Ready -> "Ready - " + LlmArtifacts.shortName
+                    LlmProvider.State.Loading -> "Loading"
                     is LlmProvider.State.Unavailable -> "Not installed"
                     LlmProvider.State.NotLoaded -> "Idle"
                 },
@@ -337,7 +337,7 @@ private fun ActivityRow(visit: Visit) {
         if (visit.highRisk) {
             Box(Modifier.size(8.dp).clip(CircleShape).background(Brand.Red))
             Spacer(Modifier.width(8.dp))
-            Text("High risk", style = MaterialTheme.typography.labelSmall, color = Brand.Red)
+            Text("High risk", style = MaterialTheme.typography.labelSmall, color = Brand.RedInk)
             Spacer(Modifier.width(12.dp))
         }
         Text(visit.date, style = MaterialTheme.typography.labelSmall, color = Brand.InkMuted)

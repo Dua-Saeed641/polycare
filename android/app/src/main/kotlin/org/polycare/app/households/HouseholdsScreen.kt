@@ -79,7 +79,7 @@ fun HouseholdsScreen(contentPadding: PaddingValues, onBack: () -> Unit, viewMode
             onDismissRequest = { confirm = null },
             title = { Text(c.title) },
             text = { Text(c.message) },
-            confirmButton = { TextButton(onClick = { c.run(); confirm = null }) { Text(c.action, color = Brand.Red) } },
+            confirmButton = { TextButton(onClick = { c.run(); confirm = null }) { Text(c.action, color = Brand.RedInk) } },
             dismissButton = { TextButton(onClick = { confirm = null }) { Text("Cancel") } },
         )
     }
@@ -106,7 +106,7 @@ fun HouseholdsScreen(contentPadding: PaddingValues, onBack: () -> Unit, viewMode
         storageWarning?.let { warning ->
             item {
                 GlassCard(Modifier.fillMaxWidth()) {
-                    Text(warning, style = MaterialTheme.typography.bodyMedium, color = Brand.Red)
+                    Text(warning, style = MaterialTheme.typography.bodyMedium, color = Brand.RedInk)
                     Spacer(Modifier.height(10.dp))
                     SecondaryButton(
                         "Rebuild from the change log",
@@ -184,7 +184,7 @@ private fun AddHouseholdCard(onAdd: (String, String, Boolean) -> Unit) {
         )
         if (head.isNotBlank() && village.isNotBlank() && !consent) {
             Spacer(Modifier.height(8.dp))
-            Text("Consent is required before a household can be registered.", style = MaterialTheme.typography.labelSmall, color = Brand.Red)
+            Text("Consent is required before a household can be registered.", style = MaterialTheme.typography.labelSmall, color = Brand.RedInk)
         }
     }
 }

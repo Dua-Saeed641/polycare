@@ -9,7 +9,12 @@ internal object WhisperNative {
         if (loaded) return
         // Shares ggml/ggml-base/ggml-cpu with LlamaNative (see core-llm's CMakeLists.txt); loading
         // an already-loaded library again is a harmless no-op, so both can call this independently.
-        for (lib in listOf("c++_shared", "ggml-base", "ggml-cpu", "ggml", "whisper", "polycare_whisper")) {
+        // "ggml-cpu" is deliberately absent: the native build sets GGML_CPU_ALL_VARIANTS, which
+        // emits one shared lib per ARM variant (libggml-cpu-android_armv8.2_1.so and friends) and
+        // no plain libggml-cpu.so. ggml dlopen()s the best one itself once the CPU is probed, so
+        // naming "ggml-cpu" here would fail with UnsatisfiedLinkError. Same reasoning as
+        // LlamaNative.ensureLoaded().
+        for (lib in listOf("c++_shared", "ggml-base", "ggml", "whisper", "polycare_whisper")) {
             System.loadLibrary(lib)
         }
         loaded = true

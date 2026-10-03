@@ -105,7 +105,7 @@ fun SyncScreen(
             }
             (state as? SyncState.Failed)?.let {
                 Spacer(Modifier.height(10.dp))
-                Text(it.reason, style = MaterialTheme.typography.bodySmall, color = Brand.Red)
+                Text(it.reason, style = MaterialTheme.typography.bodySmall, color = Brand.RedInk)
             }
         }
 

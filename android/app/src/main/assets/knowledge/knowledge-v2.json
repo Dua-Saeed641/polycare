@@ -1,0 +1,67 @@
+{
+  "version": "v2",
+  "built_at": "2026-09-28T07:46:51+00:00",
+  "file": "knowledge-v2.zip",
+  "sha256": "a4a07d573efb620513e0ba2250a928ad8396ba47c572d61875b7ab7779575c23",
+  "size_bytes": 5684413,
+  "points": 1240,
+  "model_id": "multilingual-e5-small/int8@761b726",
+  "dim": 384,
+  "engine": "qdrant-edge-py 0.8.0",
+  "sources": [
+    {
+      "id": "asha-module-6",
+      "title": "ASHA Module 6 — Skills that Save Lives: Maternal and Newborn Health",
+      "publisher": "National Health Mission, MoHFW",
+      "url": "https://nhm.gov.in/images/pdf/communitisation/asha/book-no-6.pdf",
+      "lang": "en",
+      "programme": "maternal-newborn",
+      "sha256": "9982c3e3a487d7f57da523ac37abdc721802a7b1cae6ae2a7574e4f12d8d5f21"
+    },
+    {
+      "id": "asha-module-7",
+      "title": "ASHA Module 7 — Skills that Save Lives: Child Health and Nutrition",
+      "publisher": "National Health Mission, MoHFW",
+      "url": "https://nhm.gov.in/images/pdf/communitisation/asha/book-no-7.pdf",
+      "lang": "en",
+      "programme": "child-health",
+      "sha256": "4ca167e99b6624fcd2b000d2b66eee99fd249d223e8ccf8193e62ebcdb5c6f38"
+    },
+    {
+      "id": "asha-induction",
+      "title": "Induction Training Module for ASHAs",
+      "publisher": "National Health Mission, MoHFW",
+      "url": "https://nhm.gov.in/images/pdf/communitisation/asha/ASHA_Induction_Module_English.pdf",
+      "lang": "en",
+      "programme": "general",
+      "sha256": "563ddb0a4f23c16bed186e14c88d6c60e3f33fadcf7d4810175da41f391a794f"
+    },
+    {
+      "id": "nis",
+      "title": "National Immunization Schedule (NIS) for Infants, Children and Pregnant Women",
+      "publisher": "National Health Mission, MoHFW",
+      "url": "https://nhm.gov.in/New_Updates_2018/NHM_Components/Immunization/report/National_%20Immunization_Schedule.pdf",
+      "lang": "en",
+      "programme": "immunisation",
+      "sha256": "62e7bb43e3bdc672241d7f6c7f42a934abf2e06dcbeda8e149cef04b88ec3256"
+    },
+    {
+      "id": "asha-module-6-hi",
+      "title": "आशा मॉड्यूल 6 — दक्षताएँ जो जीवन रक्षा कर सकें: मातृ एवं नवजात शिशु स्वास्थ्य",
+      "publisher": "National Health Mission, MoHFW",
+      "url": "https://nhm.gov.in/images/pdf/communitisation/asha/Asha_Module_book_6%20Hindi.pdf",
+      "lang": "hi",
+      "programme": "maternal-newborn",
+      "sha256": "3609d2559e90c09b8050d3dce76d183d26d02cb44d906c5e6421062bd61c86c8"
+    },
+    {
+      "id": "asha-module-7-hi",
+      "title": "आशा मॉड्यूल 7 — दक्षताएँ जो जीवन रक्षा कर सकें: बाल स्वास्थ्य एवं पोषण",
+      "publisher": "National Health Mission, MoHFW",
+      "url": "https://nhm.gov.in/images/pdf/communitisation/asha/Asha_Module_book_7%20Hindi.pdf",
+      "lang": "hi",
+      "programme": "child-health",
+      "sha256": "54d1d41ab02c81b02b15152fcb7445e464686b7d3446bde7fa7d83cfaa20b9bb"
+    }
+  ]
+}

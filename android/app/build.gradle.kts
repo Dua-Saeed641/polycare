@@ -46,6 +46,13 @@ android {
     packaging {
         jniLibs.pickFirsts += "**/libc++_shared.so"
         resources.excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+        // ggml loads its per-architecture CPU backends (libggml-cpu-android_armv8.*.so) by
+        // dlopen()ing a *filesystem path* and enumerating that directory, which cannot work for
+        // libs that live only inside the APK. Android 6+ defaults to extractNativeLibs=false
+        // (load straight from the APK), so the directory ggml scans would not even exist and
+        // model load fails with no CPU backend. Forcing extraction puts the .so files back on
+        // disk under nativeLibraryDir, where LlmProvider passes that path to ggml.
+        jniLibs.useLegacyPackaging = true
     }
 }
 

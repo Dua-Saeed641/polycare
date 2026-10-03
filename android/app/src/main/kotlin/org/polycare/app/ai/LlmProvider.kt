@@ -41,6 +41,12 @@ class LlmProvider @Inject constructor(
 
     val modelsRoot: File = File(context.filesDir, "models")
 
+    /**
+     * Where the Android linker unpacked this APK's native .so files. ggml dlopen()s its
+     * per-architecture CPU backends by filesystem path, so it cannot discover them without this.
+     */
+    private val nativeLibDir: String = context.applicationInfo.nativeLibraryDir
+
     private val _state = MutableStateFlow<State>(State.NotLoaded)
     val state: StateFlow<State> = _state.asStateFlow()
     private val mutex = Mutex()
@@ -65,7 +71,9 @@ class LlmProvider @Inject constructor(
                 return State.Unavailable("Model file failed verification")
             }
         }
-        val engine = runCatching { LlamaEngine.load(File(modelsRoot, LlmArtifacts.baseModel.path), gpuLayers = if (settings.useGpu.value) -1 else 0) }
+        // ggml dlopen()s its per-architecture CPU backends by path, so it needs the real directory
+        // the linker unpacked this APK's .so files into.
+        val engine = runCatching { LlamaEngine.load(File(modelsRoot, LlmArtifacts.baseModel.path), nativeLibDir = nativeLibDir, gpuLayers = if (settings.useGpu.value) -1 else 0) }
             .getOrElse { e ->
                 events.record(Category.MODEL, "LLM failed to load", mapOf("error" to e.javaClass.simpleName), Level.ERROR)
                 return State.Unavailable("Model failed to load")
