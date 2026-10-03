@@ -27,7 +27,9 @@ object CaptureUtils {
     fun loadForOcr(context: Context, uri: Uri, maxDim: Int = 2048): Pair<Bitmap, Int>? {
         val resolver = context.contentResolver
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: return null
+        // With inJustDecodeBounds, decodeStream returns null by design; the size lands in `bounds`.
+        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: Unit
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
         var sample = 1
         while (bounds.outWidth / (sample * 2) >= maxDim || bounds.outHeight / (sample * 2) >= maxDim) sample *= 2
